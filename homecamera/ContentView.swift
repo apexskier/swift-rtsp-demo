@@ -15,7 +15,7 @@ struct ContentView: View {
                 .foregroundStyle(.tint)
             Text("Hello, world!")
 
-            CameraPreview(session: CameraServer.shared.session!)
+            CameraPreview()
                 .edgesIgnoringSafeArea(.all)
         }
         .padding()

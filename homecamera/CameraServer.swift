@@ -6,10 +6,11 @@
 //  Copyright (c) 2013 GDCL http://www.gdcl.co.uk/license.htm
 //
 
+import SwiftUI
 import Foundation
 import AVFoundation
 
-final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
     static var shared: CameraServer = {
         let s = CameraServer()
@@ -112,4 +113,36 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     func getURL() -> String {
         "rtsp://\(RTSPServer.getIPAddress() ?? "0.0.0.0")/"
     }
+}
+
+public struct CameraPreview: UIViewRepresentable {
+    public class VideoPreviewView: UIView {
+        public override class var layerClass: AnyClass {
+            return AVCaptureVideoPreviewLayer.self
+        }
+
+        var videoPreviewLayer: AVCaptureVideoPreviewLayer {
+            return layer as! AVCaptureVideoPreviewLayer
+        }
+    }
+
+    let session: AVCaptureSession
+
+    public init() {
+        self.session = CameraServer.shared.session!
+    }
+
+    public var view: VideoPreviewView = {
+        let view = VideoPreviewView()
+        view.backgroundColor = .black
+        view.videoPreviewLayer.videoGravity = .resizeAspectFill
+        return view
+    }()
+
+    public func makeUIView(context: Context) -> VideoPreviewView {
+        self.view.videoPreviewLayer.session = self.session
+        return self.view
+    }
+
+    public func updateUIView(_ uiView: VideoPreviewView, context: Context) { }
 }

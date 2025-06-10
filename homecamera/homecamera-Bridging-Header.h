@@ -11,4 +11,6 @@
 #include <arpa/inet.h>
 #import "H264-RTSP-Server-iOS/H264_RTSP_Server_iOS.h"
 
+#import <AVFoundation/AVFoundation.h>
+
 #endif /* Header_h */
