@@ -14,6 +14,9 @@ struct ContentView: View {
                 .imageScale(.large)
                 .foregroundStyle(.tint)
             Text("Hello, world!")
+
+            CameraPreview(session: CameraServer.shared.session!)
+                .edgesIgnoringSafeArea(.all)
         }
         .padding()
     }

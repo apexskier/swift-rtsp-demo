@@ -1,0 +1,21 @@
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+.build/
+
+node_modules/
+*.map
+
+Extension/Resources/*.js
+Extension/dst/
+
+*.screenshotstudio

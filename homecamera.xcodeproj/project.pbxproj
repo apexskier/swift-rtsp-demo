@@ -29,9 +29,28 @@
 		C5F17EB92DF887A100A17E3F /* homecameraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = homecameraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C52FAEE72DF8E244009B0428 /* Exceptions for "homecamera" folder in "homecamera" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"RTSP Server/AVEncoder/AVEncoder.swift",
+				"RTSP Server/AVEncoder/MP4Atom.swift",
+				"RTSP Server/AVEncoder/NALUnit.swift",
+				"RTSP Server/AVEncoder/VideoEncoder.swift",
+				"RTSP Server/RTSP/RTSPClientConnection.swift",
+				"RTSP Server/RTSP/RTSPMessage.swift",
+				"RTSP Server/RTSP/RTSPServer.swift",
+			);
+			target = C5F17E9D2DF887A000A17E3F /* homecamera */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C5F17EA02DF887A000A17E3F /* homecamera */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C52FAEE72DF8E244009B0428 /* Exceptions for "homecamera" folder in "homecamera" target */,
+			);
 			path = homecamera;
 			sourceTree = "<group>";
 		};
@@ -195,6 +214,8 @@
 			);
 			mainGroup = C5F17E952DF887A000A17E3F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C5F17E9F2DF887A000A17E3F /* Products */;
 			projectDirPath = "";
@@ -396,6 +417,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Provides a local IP webcam.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -416,6 +438,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "homecamera/homecamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;
@@ -435,6 +458,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Provides a local IP webcam.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -455,6 +479,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "homecamera/homecamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;

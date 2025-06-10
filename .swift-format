@@ -1,0 +1,12 @@
+{
+  "indentation" : {
+    "spaces" : 4
+  },
+  "lineBreakBeforeEachArgument" : true,
+  "lineBreakBeforeEachGenericRequirement" : true,
+  "lineBreakBetweenDeclarationAttributes" : true,
+  "prioritizeKeepingFunctionOutputTogether" : true,
+  "indentConditionalCompilationBlocks" : false,
+  "lineBreakAroundMultilineExpressionChainComponents" : true,
+  "version" : 1
+}
