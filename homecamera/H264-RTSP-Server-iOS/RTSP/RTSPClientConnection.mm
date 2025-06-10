@@ -308,7 +308,7 @@ static void onRTCP(CFSocketRef s,
 
 - (NSString*) makeSDP
 {
-    NSData* config = [_server getConfigData];
+    NSData* config = [_server configData];
     
     avcCHeader avcC((const BYTE*)[config bytes], (int)[config length]);
     SeqParamSet seqParams;

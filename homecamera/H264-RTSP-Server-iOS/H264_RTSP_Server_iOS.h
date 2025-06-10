@@ -9,5 +9,5 @@
 
 // In this header, you should import all the public headers of your framework using statements like #import <H264_RTSP_Server_iOS/PublicHeader.h>
 
-#import "RTSP/RTSPServer.h"
 #import "AVEncoder/AVEncoder.h"
+#import "RTSP/RTSPClientConnection.h"

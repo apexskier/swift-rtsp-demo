@@ -7,7 +7,7 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "RTSPServer.h"
+#import "homecamera-Swift.h"
 
 @interface RTSPClientConnection : NSObject
 

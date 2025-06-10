@@ -57,14 +57,14 @@ fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBu
             fatalError("Failed to create AVEncoder")
         }
         encoder.encode { [weak self] data, pts in
-            guard let self else { return 0 }
+            guard let self, let data else { return 0 }
             if let rtsp = self.rtsp {
-                rtsp.bitrate = encoder.bitspersecond
+                rtsp.bitrate = Int(encoder.bitspersecond)
                 rtsp.onVideoData(data, time: pts)
             }
             return 0
         } onParams: { [weak self] data in
-            guard let self else { return 0 }
+            guard let self, let data else { return 0 }
             self.rtsp = RTSPServer.setupListener(data)
             return 0
         }

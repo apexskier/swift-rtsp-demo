@@ -1,0 +1,149 @@
+import CoreFoundation
+import CoreServices
+import Foundation
+import Network
+
+@objc
+class RTSPServer: NSObject {
+    private var listener: CFSocket?
+    private var connections: [RTSPClientConnection] = []
+    @objc private(set) var configData: Data
+    @objc dynamic var bitrate: Int
+
+    // MARK: - Initializer
+    init?(configData: Data) {
+        self.configData = configData
+        self.bitrate = 1_000_000
+        super.init()
+        var context = CFSocketContext(
+            version: 0,
+            info: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        listener = CFSocketCreate(
+            nil,
+            PF_INET,
+            SOCK_STREAM,
+            IPPROTO_TCP,
+            CFOptionFlags(CFSocketCallBackType.acceptCallBack.rawValue),
+            { (s, callbackType, address, data, info) in
+                guard let info = info else { return }
+                let server = Unmanaged<RTSPServer>.fromOpaque(info).takeUnretainedValue()
+                switch callbackType {
+                case .acceptCallBack:
+                    if let pH = data?.assumingMemoryBound(to: CFSocketNativeHandle.self) {
+                        server.onAccept(childHandle: pH.pointee)
+                    }
+                default:
+                    print("unexpected socket event")
+                }
+            },
+            &context
+        )
+        guard let listener = listener else { return nil }
+        // must set SO_REUSEADDR in case a client is still holding this address
+        var t: Int32 = 1
+        setsockopt(
+            CFSocketGetNative(listener),
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &t,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(554).bigEndian
+        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
+        let dataAddr = Data(bytes: &addr, count: MemoryLayout<sockaddr_in>.size)
+        let cfDataAddr = dataAddr as CFData
+        let e = CFSocketSetAddress(listener, cfDataAddr)
+        if e != .success {
+            print("bind error \(e.rawValue)")
+        }
+        let rls = CFSocketCreateRunLoopSource(nil, listener, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
+    }
+
+    // MARK: - Factory
+    static func setupListener(_ configData: Data) -> RTSPServer? {
+        RTSPServer(configData: configData)
+    }
+
+    // MARK: - Accept
+    private func onAccept(childHandle: CFSocketNativeHandle) {
+        if let conn = RTSPClientConnection.create(withSocket: childHandle, server: self) {
+            objc_sync_enter(self)
+            print("Client connected")
+            connections.append(conn)
+            objc_sync_exit(self)
+        }
+    }
+
+    // MARK: - Video Data
+    func onVideoData(_ data: [Any], time: Double) {
+        objc_sync_enter(self)
+        for conn in connections {
+            conn.onVideoData(data, time: time)
+        }
+        objc_sync_exit(self)
+    }
+
+    // MARK: - Shutdown Connection
+    @objc
+    func shutdownConnection(_ conn: RTSPClientConnection) {
+        objc_sync_enter(self)
+        print("Client disconnected")
+        if let idx = connections.firstIndex(where: { $0 === conn }) {
+            connections.remove(at: idx)
+        }
+        objc_sync_exit(self)
+    }
+
+    // MARK: - Shutdown Server
+    func shutdownServer() {
+        objc_sync_enter(self)
+        for conn in connections {
+            conn.shutdown()
+        }
+        connections.removeAll(keepingCapacity: true)
+        if let listener {
+            CFSocketInvalidate(listener)
+            self.listener = nil
+        }
+        objc_sync_exit(self)
+    }
+
+    // MARK: - IP Address
+    static func getIPAddress() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
+        if getifaddrs(&ifaddr) == 0 {
+            var ptr = ifaddr
+            while ptr != nil {
+                let interface = ptr!.pointee
+                let name = String(cString: interface.ifa_name)
+                if name == "en0", interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) {
+                    var addr = interface.ifa_addr.pointee
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    getnameinfo(
+                        &addr,
+                        socklen_t(interface.ifa_addr.pointee.sa_len),
+                        &hostname,
+                        socklen_t(hostname.count),
+                        nil,
+                        0,
+                        NI_NUMERICHOST
+                    )
+                    address = String(cString: hostname)
+                    break
+                }
+                ptr = interface.ifa_next
+            }
+            freeifaddrs(ifaddr)
+        }
+        return address
+    }
+}
