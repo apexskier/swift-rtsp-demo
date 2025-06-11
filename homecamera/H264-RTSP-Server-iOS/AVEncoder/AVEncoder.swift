@@ -189,12 +189,12 @@ class AVEncoder {
         guard let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
         defer { try? file.close() }
         let s = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
-        let movie = MP4Atom(at: 0, size: Int64(s), type: UInt32("file".utf8.reduce(0) { $0 << 8 | UInt32($1) }), inFile: file)
-        guard let moov = movie.child(ofType: UInt32("moov".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) else { return false }
+        var movie = MP4Atom(at: 0, size: Int64(s), type: UInt32("file".utf8.reduce(0) { $0 << 8 | UInt32($1) }), inFile: file)
+        guard var moov = movie.child(ofType: UInt32("moov".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) else { return false }
         var trak: MP4Atom? = nil
         repeat {
             trak = moov.nextChild()
-            if let t = trak, t.type == UInt32("trak".utf8.reduce(0) { $0 << 8 | UInt32($1) }) {
+            if var t = trak, t.type == UInt32("trak".utf8.reduce(0) { $0 << 8 | UInt32($1) }) {
                 if let tkhd = t.child(ofType: UInt32("tkhd".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) {
                     let verflags = tkhd.read(at: 0, size: 4)
                     if verflags.count == 4, (verflags[3] & 1) != 0 { break } else { continue }
@@ -202,15 +202,15 @@ class AVEncoder {
             }
         } while trak != nil
         var stsd: MP4Atom? = nil
-        if let trak {
-            if let media = trak.child(ofType: UInt32("mdia".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0),
-               let minf = media.child(ofType: UInt32("minf".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0),
-               let stbl = minf.child(ofType: UInt32("stbl".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) {
+        if var trak {
+            if var media = trak.child(ofType: UInt32("mdia".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0),
+               var minf = media.child(ofType: UInt32("minf".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0),
+               var stbl = minf.child(ofType: UInt32("stbl".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) {
                 stsd = stbl.child(ofType: UInt32("stsd".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0)
             }
         }
-        if let stsd = stsd,
-           let avc1 = stsd.child(ofType: UInt32("avc1".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 8),
+        if var stsd = stsd,
+           var avc1 = stsd.child(ofType: UInt32("avc1".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 8),
            let esd = avc1.child(ofType: UInt32("avcC".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 78) {
             // this is the avcC record that we are looking for
             avcC = esd.read(at: 0, size: Int(esd.length))

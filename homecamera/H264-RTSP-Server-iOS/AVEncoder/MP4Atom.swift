@@ -1,7 +1,7 @@
 import Foundation
 
 // MP4Atom: Represents an atom/box in an MP4 file, with child navigation and data reading
-class MP4Atom {
+struct MP4Atom {
     private let file: FileHandle
     private let offset: UInt64
     private(set) var length: Int64
@@ -22,12 +22,12 @@ class MP4Atom {
     }
 
     // Set the offset for the next child atom
-    func setChildOffset(_ offset: UInt64) {
+    private mutating func setChildOffset(_ offset: UInt64) {
         nextChildOffset = offset
     }
 
     // Get the next child atom, or nil if none
-    func nextChild() -> MP4Atom? {
+    mutating func nextChild() -> MP4Atom? {
         if nextChildOffset <= length - 8 {
             try? file.seek(toOffset: offset + nextChildOffset)
             var data = file.readData(ofLength: 8)
@@ -61,7 +61,7 @@ class MP4Atom {
     }
 
     // Find the first child of a given type, starting at offset
-    func child(ofType fourcc: UInt32, startAt offset: UInt64) -> MP4Atom? {
+    mutating func child(ofType fourcc: UInt32, startAt offset: UInt64) -> MP4Atom? {
         setChildOffset(offset)
         var child: MP4Atom? = nil
         repeat {
