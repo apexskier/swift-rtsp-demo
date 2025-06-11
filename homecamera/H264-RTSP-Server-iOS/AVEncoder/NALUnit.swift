@@ -51,53 +51,7 @@ public final class NALUnit {
         self.resetBitstream()
     }
 
-    public func parse(
-        _ buffer: UnsafePointer<UInt8>,
-        space: Int,
-        lengthSize: Int,
-        isEnd: Bool
-    ) -> Bool {
-        // if we get the start code but not the whole NALU, we can return false but still have the length property valid
-        self.length = 0
-        self.resetBitstream()
-        if lengthSize > 0 {
-            self.startCodeStart = buffer
-            if lengthSize > space { return false }
-            self.length = 0
-            var len: Int = 0
-            var p = buffer
-            for _ in 0..<lengthSize {
-                len <<= 8
-                len += Int(p.pointee)
-                p = p.advanced(by: 1)
-            }
-            if (len + lengthSize) <= space {
-                self.start = p
-                self.length = len
-                return true
-            }
-        } else {
-            // not length-delimited: look for start codes
-            var pBegin: UnsafePointer<UInt8>? = nil
-            var pBuffer = buffer
-            var cSpace = space
-            if getStartCode(&pBegin, &pBuffer, &cSpace) {
-                self.start = pBuffer
-                self.startCodeStart = pBegin
-                if getStartCode(&pBegin, &pBuffer, &cSpace) {
-                    self.length =
-                        pBegin.map { Int(bitPattern: $0) - Int(bitPattern: self.start!) } ?? 0
-                    return true
-                } else if isEnd {
-                    self.length = cSpace
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    public func type() -> NALType {
+    func type() -> NALType {
         guard let start = self.start else { return .unknown }
         return NALType(byte: start.pointee)
     }
@@ -191,40 +145,11 @@ public final class NALUnit {
         guard let start = self.start else { return false }
         return (start.pointee & 0x60) != 0
     }
-
-    // MARK: - Private
-    private func getStartCode(
-        _ pBegin: inout UnsafePointer<UInt8>?,
-        _ pStart: inout UnsafePointer<UInt8>,
-        _ cRemain: inout Int
-    ) -> Bool {
-        // start code is any number of 00 followed by 00 00 01
-        // We need to record the first 00 in pBegin and the first byte following the startcode in pStart.
-        // if no start code is found, pStart and cRemain should be unchanged.
-        var pThis = pStart
-        var cBytes = cRemain
-        pBegin = nil
-        while cBytes >= 4 {
-            if pThis[0] == 0 {
-                if pBegin == nil { pBegin = pThis }
-                if pThis[1] == 0 && pThis[2] == 1 {
-                    pStart = pThis.advanced(by: 3)
-                    cRemain = cBytes - 3
-                    return true
-                }
-            } else {
-                pBegin = nil
-            }
-            cBytes -= 1
-            pThis = pThis.advanced(by: 1)
-        }
-        return false
-    }
 }
 
 // MARK: - SeqParamSet
 
-public final class SeqParamSet {
+public struct SeqParamSet {
     private(set) var frameBits: Int = 0
     private(set) var cx: Int = 0
     private(set) var cy: Int = 0
@@ -236,10 +161,8 @@ public final class SeqParamSet {
     private(set) var pocLSBBits: Int = 0
     private(set) var nalu: NALUnit = NALUnit()
 
-    public init() {}
-
-    public func parse(_ nalu: NALUnit) -> Bool {
-        guard nalu.type() == .sequenceParams else { return false }
+    public init?(_ nalu: NALUnit) {
+        guard nalu.type() == .sequenceParams else { return nil }
 
         // with the UE/SE type encoding, we must decode all the values
         // to get through to the ones we want
@@ -264,9 +187,9 @@ public final class SeqParamSet {
                 for i in 0..<maxScalingLists {
                     if nalu.getBit() != 0 {
                         if i < 6 {
-                            scalingList(size: 16, nalu: nalu)
+                            nalu.scalingList(size: 16)
                         } else {
-                            scalingList(size: 64, nalu: nalu)
+                            nalu.scalingList(size: 64)
                         }
                     }
                 }
@@ -288,7 +211,7 @@ public final class SeqParamSet {
                 _ = nalu.getSE()  // sf_offset
             }
         } else if pocType != 2 {
-            return false
+            return nil
         }
         // else for POCtype == 2, no additional data in stream
 
@@ -301,14 +224,14 @@ public final class SeqParamSet {
         cy = (mbsHeight + 1) * 16
 
         // smoke test validation of sps
-        if cx > 2000 || cy > 2000 { return false }
+        if cx > 2000 || cy > 2000 { return nil }
 
         // if this is false, then sizes are field sizes and need adjusting
         interlaced = nalu.getBit() == 0
         if interlaced {
             nalu.skip(1)  // adaptive frame/field
         }
-        nalu.skip(1) // direct 8x8
+        nalu.skip(1)  // direct 8x8
 
         if interlaced {
             // adjust heights from field to frame
@@ -317,15 +240,16 @@ public final class SeqParamSet {
 
         // .. rest are not interesting yet
         self.nalu = nalu
-        return true
     }
+}
 
-    private func scalingList(size: Int, nalu: NALUnit) {
+extension NALUnit {
+    fileprivate func scalingList(size: Int) {
         var lastScale = 8
         var nextScale = 8
         for _ in 0..<size {
             if nextScale != 0 {
-                let delta = nalu.getSE()
+                let delta = getSE()
                 nextScale = (lastScale + delta + 256) % 256
             }
             lastScale = (nextScale == 0) ? lastScale : nextScale
@@ -335,20 +259,20 @@ public final class SeqParamSet {
 
 // MARK: - SliceHeader
 
-public final class SliceHeader {
+fileprivate struct SliceHeader {
     private(set) var framenum: Int = 0
     private(set) var bField: Bool = false
     private(set) var bBottom: Bool = false
     private(set) var pocDelta: Int = 0
     private(set) var pocLSB: Int = 0
 
-    public func parse(_ nalu: NALUnit, sps: SeqParamSet, deltaPresent: Bool) -> Bool {
+    public init?(_ nalu: NALUnit, sps: SeqParamSet, deltaPresent: Bool) {
         switch nalu.type() {
         case .idrSlice, .slice, .partitionA:
             // all these begin with a slice header
             break
         default:
-            return false
+            return nil
         }
 
         // slice header has the 1-byte type, then one UE value,
@@ -368,7 +292,7 @@ public final class SliceHeader {
             if bField { bBottom = nalu.getBit() != 0 }
         }
         if nalu.type() == .idrSlice {
-            _ = nalu.getUE() // idr_pic_id
+            _ = nalu.getUE()  // idr_pic_id
         }
         pocLSB = 0
         if sps.pocType == 0 {
@@ -378,50 +302,12 @@ public final class SliceHeader {
                 pocDelta = nalu.getSE()
             }
         }
-
-        return true
-    }
-}
-
-// MARK: - SEIMessage
-
-public final class SEIMessage {
-    private let nalu: NALUnit
-    private let type: Int
-    private let length: Int
-    private let idxPayload: Int
-
-    public init(nalu: NALUnit) {
-        self.nalu = nalu
-        var p = nalu.start?.advanced(by: 1) ?? UnsafePointer<UInt8>(bitPattern: 0)!
-        var t = 0
-        while p.pointee == 0xff {
-            t += 255
-            p = p.advanced(by: 1)
-        }
-        t += Int(p.pointee)
-        p = p.advanced(by: 1)
-        var l = 0
-        while p.pointee == 0xff {
-            l += 255
-            p = p.advanced(by: 1)
-        }
-        l += Int(p.pointee)
-        p = p.advanced(by: 1)
-        self.type = t
-        self.length = l
-        self.idxPayload = Int(p - (nalu.start ?? p))
-    }
-    
-    public func payload() -> UnsafePointer<UInt8>? {
-        guard let start = nalu.start else { return nil }
-        return start.advanced(by: idxPayload)
     }
 }
 
 // MARK: - avcCHeader
 
-public final class avcCHeader {
+public struct avcCHeader {
     private(set) var lengthSize: Int = 0
     private(set) var sps: NALUnit = NALUnit()
     private(set) var pps: NALUnit = NALUnit()
@@ -457,8 +343,7 @@ public final class avcCHeader {
 public final class POCState {
     private var prevLSB: Int = 0
     private var prevMSB: Int = 0
-    private var avc: avcCHeader?
-    private var sps: SeqParamSet = SeqParamSet()
+    private var sps: SeqParamSet?
     private var deltaPresent: Bool = false
     private(set) var frameNum: Int = 0
     private(set) var lastlsb: Int = 0
@@ -466,8 +351,7 @@ public final class POCState {
     public init() {}
 
     public func setHeader(_ avc: avcCHeader) {
-        self.avc = avc
-        _ = sps.parse(avc.sps)
+        self.sps = SeqParamSet(avc.sps)
         let pps = avc.pps
         pps.resetBitstream()
         _ = pps.getUE()  // ppsid
@@ -477,10 +361,9 @@ public final class POCState {
     }
 
     public func getPOC(nal: NALUnit, pPOC: inout Int) -> Bool {
-        guard self.avc != nil else { return false }
+        guard let sps else { return false }
         let maxlsb = 1 << sps.pocLSBBits
-        let slice = SliceHeader()
-        if slice.parse(nal, sps: sps, deltaPresent: deltaPresent) {
+        if let slice = SliceHeader(nal, sps: sps, deltaPresent: deltaPresent) {
             frameNum = slice.framenum
             var prevMSB = self.prevMSB
             var prevLSB = self.prevLSB

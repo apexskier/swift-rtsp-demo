@@ -80,7 +80,7 @@ class RTSPClientConnection {
     private var RTCP: (CFData, CFSocket)?
     private var session: String?
     private var state: ServerState = .idle
-    private var packets: Int = 0
+    private var packets: Int = 0 // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
     private var bytesSent: Int = 0
     private var ssrc: UInt32 = 0
     private var bFirst: Bool = true
@@ -244,8 +244,7 @@ class RTSPClientConnection {
             return avcCHeader(header: bytes, cBytes: config.count)
         }
 
-        let seqParams = SeqParamSet()
-        if !seqParams.parse(avcC.sps) {
+        guard let seqParams = SeqParamSet(avcC.sps) else {
             fatalError("Failed to parse SPS from avcC")
         }
 
@@ -394,9 +393,8 @@ class RTSPClientConnection {
         let rtpHeaderSize = 12
         let maxSinglePacket = maxPacketSize - rtpHeaderSize
         let maxFragmentPacket = maxSinglePacket - 2
-        var packet = Data(repeating: 0, count: maxPacketSize)
         for (i, nalu) in data.enumerated() {
-            let cBytes = nalu.count
+            var countBytes = nalu.count
             let bLast = (i == data.count - 1)
             if bFirst {
                 if (nalu[0] & 0x1f) != 5 {
@@ -405,21 +403,25 @@ class RTSPClientConnection {
                 bFirst = false
                 print("Playback starting at first IDR")
             }
-            if cBytes < maxSinglePacket {
+            if countBytes < maxSinglePacket {
+                var packet = Data(repeating: 0, count: maxPacketSize)
                 writeHeader(&packet, marker: bLast, time: pts)
-                packet.replaceSubrange(data.index(after: rtpHeaderSize)..., with: nalu)
-                sendPacket(packet: packet, length: cBytes + rtpHeaderSize)
+                packet.replaceSubrange(packet.index(before: rtpHeaderSize)..., with: nalu)
+                sendPacket(packet: packet, length: countBytes + rtpHeaderSize)
             } else {
-                var nalu = nalu
-                let naluHeader = nalu[0]
-                var cBytesLeft = cBytes - 1
+                var pointerNalu = 0
+                let naluHeader = nalu[pointerNalu]
+                pointerNalu += 1
+                countBytes -= 1
                 var bStart = true
-                while cBytesLeft > 0 {
-                    let cThis = min(cBytesLeft, maxFragmentPacket)
-                    let bEnd = (cThis == cBytesLeft)
+
+                while countBytes > 0 {
+                    var packet = Data(repeating: 0, count: maxPacketSize)
+                    let cThis = min(countBytes, maxFragmentPacket)
+                    let bEnd = cThis == countBytes
                     writeHeader(&packet, marker: bLast && bEnd, time: pts)
-                    var pDest = rtpHeaderSize
-                    packet[pDest] = (naluHeader & 0xe0) + 28  // FU_A type
+
+                    packet[0] = (naluHeader & 0xe0) + 28  // FU_A type
                     var fuHeader = naluHeader & 0x1f
                     if bStart {
                         fuHeader |= 0x80
@@ -427,27 +429,26 @@ class RTSPClientConnection {
                     } else if bEnd {
                         fuHeader |= 0x40
                     }
-                    packet[pDest + 1] = fuHeader
-                    pDest += 2
-                    packet.replaceSubrange(
-                        pDest..<(pDest + cThis),
-                        with: nalu
-                    )
+                    packet[1] = fuHeader
+                    packet[2..<(2 + cThis)] = nalu[pointerNalu..<(pointerNalu + cThis)]
                     sendPacket(packet: packet, length: cThis + rtpHeaderSize + 2)
-                    nalu = nalu.advanced(by: cThis)
-                    cBytesLeft -= cThis
+
+                    pointerNalu += cThis
+                    countBytes -= cThis
                 }
             }
         }
     }
 
     // MARK: - RTP Header
-    func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
-        packet[0] = 0x80  // v=2
-        packet[1] = bMarker ? (96 | 0x80) : 96
+    private func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
+        packet[packet.startIndex] = 0b10000000 // v=2
+        packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
+
         let seq = UInt16(packets & 0xffff)
         let seqBytes = tonetShort(seq)
-        packet.replaceSubrange(2...3, with: seqBytes)
+        packet.replaceSubrange(2..<4, with: seqBytes)
+
         while rtpBase == 0 {
             rtpBase = UInt64(UInt32.random(in: UInt32.min...UInt32.max))
             ptsBase = pts
@@ -457,17 +458,12 @@ class RTSPClientConnection {
             let interval = now.timeIntervalSince(ref)
             ntpBase = UInt64(interval * Double(1 << 32))
         }
-        let ptsAdj = pts - ptsBase
-        var rtp = UInt64(ptsAdj * 90000)
-        rtp += rtpBase
+        let rtp = UInt64((pts - ptsBase) * 90000) + rtpBase
         let rtpBytes = tonetLong(UInt32(truncatingIfNeeded: rtp))
-        packet.replaceSubrange(4...7, with: rtpBytes)
+        packet.replaceSubrange(4..<8, with: rtpBytes)
+
         let ssrcBytes = tonetLong(ssrc)
-        packet.replaceSubrange(8...11, with: ssrcBytes)
-        packet[8] = ssrcBytes[0]
-        packet[9] = ssrcBytes[1]
-        packet[10] = ssrcBytes[2]
-        packet[11] = ssrcBytes[3]
+        packet.replaceSubrange(8..<12, with: ssrcBytes)
     }
 
     // MARK: - RTP/RTCP Packet Sending
@@ -484,12 +480,19 @@ class RTSPClientConnection {
         let now = Date()
         if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
             var buf = Data(capacity: 7 * MemoryLayout<UInt32>.size)
-            buf.append(contentsOf: [0x80, 200])  // SR type
-            buf.append(UnsafeBufferPointer(start: &ssrc, count: 1))
-            buf.append(UnsafeBufferPointer(start: &ntpBase, count: 1))
-            buf.append(UnsafeBufferPointer(start: &rtpBase, count: 1))
-            buf.append(UnsafeBufferPointer(start: &packets - packetsReported, count: 1))
-            buf.append(UnsafeBufferPointer(start: &bytesSent - bytesReported, count: 1))
+            buf += [
+                0x80, // version
+                200, // type == SR
+                0, // empty
+                6 // length (count of uint32_t minus 1)
+            ]
+            buf += tonetLong(ssrc)
+            withUnsafeBytes(of: UInt64(ntpBase).bigEndian) { ptr in
+                buf += ptr
+            }
+            buf += tonetLong(UInt32(rtpBase))
+            buf += tonetLong(UInt32(packets - packetsReported))
+            buf += tonetLong(UInt32(bytesSent - bytesReported))
             // tonet_short(buf+2, 6);  // length (count of uint32_t minus 1)
             // tonet_long(buf+4, _ssrc);
             // tonet_long(buf+8, (_ntpBase >> 32));
