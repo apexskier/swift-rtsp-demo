@@ -196,7 +196,7 @@ class AVEncoder {
             trak = moov.nextChild()
             if var t = trak, t.type == UInt32("trak".utf8.reduce(0) { $0 << 8 | UInt32($1) }) {
                 if let tkhd = t.child(ofType: UInt32("tkhd".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 0) {
-                    let verflags = tkhd.read(at: 0, size: 4)
+                    let verflags = tkhd.read(size: 4)
                     if verflags.count == 4, (verflags[3] & 1) != 0 { break } else { continue }
                 }
             }
@@ -213,7 +213,7 @@ class AVEncoder {
            var avc1 = stsd.child(ofType: UInt32("avc1".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 8),
            let esd = avc1.child(ofType: UInt32("avcC".utf8.reduce(0) { $0 << 8 | UInt32($1) }), startAt: 78) {
             // this is the avcC record that we are looking for
-            avcC = esd.read(at: 0, size: Int(esd.length))
+            avcC = esd.read(size: Int(esd.length))
             if let avcC, avcC.count > 4 {
                 // extract size of length field
                 lengthSize = Int((avcC[4] & 3) + 1)

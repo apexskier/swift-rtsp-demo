@@ -4,8 +4,8 @@ import Foundation
 struct MP4Atom {
     private let file: FileHandle
     private let offset: UInt64
-    private(set) var length: Int64
-    private(set) var type: UInt32
+    let length: Int64
+    let type: UInt32
     private var nextChildOffset: UInt64 = 0
 
     init(at offset: UInt64, size: Int64, type: UInt32, inFile handle: FileHandle) {
@@ -16,14 +16,9 @@ struct MP4Atom {
     }
 
     // Read data at offset from atom start
-    func read(at offset: UInt64, size: Int) -> Data {
+    func read(at offset: UInt64 = 0, size: Int) -> Data {
         try? file.seek(toOffset: self.offset + offset)
         return file.readData(ofLength: size)
-    }
-
-    // Set the offset for the next child atom
-    private mutating func setChildOffset(_ offset: UInt64) {
-        nextChildOffset = offset
     }
 
     // Get the next child atom, or nil if none
@@ -62,7 +57,7 @@ struct MP4Atom {
 
     // Find the first child of a given type, starting at offset
     mutating func child(ofType fourcc: UInt32, startAt offset: UInt64) -> MP4Atom? {
-        setChildOffset(offset)
+        nextChildOffset = offset
         var child: MP4Atom? = nil
         repeat {
             child = nextChild()
