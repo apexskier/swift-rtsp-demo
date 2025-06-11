@@ -1,5 +1,13 @@
 import Foundation
 
+typealias MP4AtomType = UInt32
+
+extension MP4AtomType {
+    init(_ string: String) {
+        self = string.utf8.reduce(0) { ($0 << 8) | UInt32($1) }
+    }
+}
+
 // MP4Atom: Represents an atom/box in an MP4 file, with child navigation and data reading
 struct MP4Atom {
     private let file: FileHandle
@@ -56,13 +64,17 @@ struct MP4Atom {
     }
 
     // Find the first child of a given type, starting at offset
-    mutating func child(ofType fourcc: UInt32, startAt offset: UInt64) -> MP4Atom? {
+    mutating func child(ofType fourcc: UInt32, startAt offset: UInt64 = 0) -> MP4Atom? {
         nextChildOffset = offset
         var child: MP4Atom? = nil
         repeat {
             child = nextChild()
         } while child != nil && child!.type != fourcc
         return child
+    }
+
+    mutating func child(ofType fourcc: String, startAt offset: UInt64 = 0) -> MP4Atom? {
+        child(ofType: MP4AtomType(fourcc), startAt: offset)
     }
 }
 
