@@ -2,13 +2,12 @@ import Foundation
 import AVKit
 
 // RTSPMessage: Parses RTSP requests and generates responses
-@objc class RTSPMessage: NSObject {
+struct RTSPMessage {
     private var lines: [String] = []
-    @objc var command: String = ""
-    var sequence: Int = 0
+    var command: String
+    var sequence: Int
 
     init?(data: Data) {
-        super.init()
         guard let msg = String(data: data, encoding: .utf8) else {
             print("msg parse error: invalid UTF-8")
             return nil
@@ -37,7 +36,7 @@ import AVKit
     }
 
     // Find the value for a given RTSP header option (case-insensitive)
-    @objc func valueForOption(_ option: String) -> String? {
+    func valueForOption(_ option: String) -> String? {
         RTSPMessage.extractValue(for: option, in: lines)
     }
 
@@ -55,12 +54,18 @@ import AVKit
     }
 
     // Create a response string for the given code and description
-    @objc func createResponse(_ code: Int, text desc: String) -> String {
-        "RTSP/1.0 \(code) \(desc)\r\nCSeq: \(sequence)\r\n"
+    func createResponse(code: Int, text desc: String) -> [String] {
+        ["RTSP/1.0 \(code) \(desc)", "CSeq: \(sequence)"]
     }
 
     // Objective-C factory method
-    @objc static func createWithData(_ data: CFData) -> RTSPMessage? {
+    static func createWithData(_ data: CFData) -> RTSPMessage? {
         RTSPMessage(data: data as Data)
+    }
+}
+
+extension RTSPMessage: CustomDebugStringConvertible {
+    var debugDescription: String {
+        lines.joined(separator: "\n")
     }
 }

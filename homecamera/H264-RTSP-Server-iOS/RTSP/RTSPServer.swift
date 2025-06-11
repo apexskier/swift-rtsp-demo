@@ -3,18 +3,15 @@ import CoreServices
 import Foundation
 import Network
 
-@objc
-class RTSPServer: NSObject {
+class RTSPServer {
     private var listener: CFSocket?
     private var connections: [RTSPClientConnection] = []
-    @objc private(set) var configData: Data
-    @objc dynamic var bitrate: Int
+    private(set) var configData: Data
+    var bitrate: Int = 0
 
     // MARK: - Initializer
     init?(configData: Data) {
         self.configData = configData
-        self.bitrate = 1_000_000
-        super.init()
         var context = CFSocketContext(
             version: 0,
             info: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
@@ -42,7 +39,7 @@ class RTSPServer: NSObject {
             },
             &context
         )
-        guard let listener = listener else { return nil }
+        guard let listener else { return nil }
         // must set SO_REUSEADDR in case a client is still holding this address
         var t: Int32 = 1
         setsockopt(
@@ -62,6 +59,7 @@ class RTSPServer: NSObject {
         let e = CFSocketSetAddress(listener, cfDataAddr)
         if e != .success {
             print("bind error \(e.rawValue)")
+            return nil
         }
         let rls = CFSocketCreateRunLoopSource(nil, listener, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
@@ -74,7 +72,7 @@ class RTSPServer: NSObject {
 
     // MARK: - Accept
     private func onAccept(childHandle: CFSocketNativeHandle) {
-        if let conn = RTSPClientConnection.create(withSocket: childHandle, server: self) {
+        if let conn = RTSPClientConnection(socketHandle: childHandle, server: self) {
             objc_sync_enter(self)
             print("Client connected")
             connections.append(conn)
@@ -83,7 +81,7 @@ class RTSPServer: NSObject {
     }
 
     // MARK: - Video Data
-    func onVideoData(_ data: [Any], time: Double) {
+    func onVideoData(_ data: [Data], time: Double) {
         objc_sync_enter(self)
         for conn in connections {
             conn.onVideoData(data, time: time)
@@ -92,7 +90,6 @@ class RTSPServer: NSObject {
     }
 
     // MARK: - Shutdown Connection
-    @objc
     func shutdownConnection(_ conn: RTSPClientConnection) {
         objc_sync_enter(self)
         print("Client disconnected")

@@ -29,9 +29,22 @@
 		C5F17EB92DF887A100A17E3F /* homecameraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = homecameraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C53C6AA52DF92697000B2755 /* Exceptions for "homecamera" folder in "homecameraTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"H264-RTSP-Server-iOS/AVEncoder/MP4Atom.swift",
+			);
+			target = C5F17EAE2DF887A100A17E3F /* homecameraTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C5F17EA02DF887A000A17E3F /* homecamera */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C53C6AA52DF92697000B2755 /* Exceptions for "homecamera" folder in "homecameraTests" target */,
+			);
 			path = homecamera;
 			sourceTree = "<group>";
 		};
@@ -419,7 +432,6 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "homecamera/homecamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;
@@ -460,7 +472,6 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "homecamera/homecamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;

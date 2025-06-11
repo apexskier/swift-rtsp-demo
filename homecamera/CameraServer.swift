@@ -6,15 +6,15 @@
 //  Copyright (c) 2013 GDCL http://www.gdcl.co.uk/license.htm
 //
 
-import SwiftUI
-import Foundation
 import AVFoundation
+import Foundation
+import SwiftUI
 
-fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
     static var shared: CameraServer = {
         let s = CameraServer()
-        s.startup()
+        try? s.startup()
         return s
     }()
 
@@ -37,8 +37,8 @@ fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBu
         // Create capture device with video input
         let session = AVCaptureSession()
         guard let dev = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: dev),
-              session.canAddInput(input)
+            let input = try? AVCaptureDeviceInput(device: dev),
+            session.canAddInput(input)
         else { return }
         session.addInput(input)
 
@@ -47,24 +47,23 @@ fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBu
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(self, queue: captureQueue)
         output.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            kCVPixelBufferPixelFormatTypeKey as String:
+                kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         ]
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
 
         // Create an encoder
-        guard let encoder = AVEncoder(forHeight: 480, andWidth: 720) else {
-            fatalError("Failed to create AVEncoder")
-        }
+        let encoder = AVEncoder(height: 480, width: 720)
         encoder.encode { [weak self] data, pts in
-            guard let self, let data else { return 0 }
-            if let rtsp = self.rtsp {
+            guard let self else { return 0 }
+            if let rtsp {
                 rtsp.bitrate = Int(encoder.bitspersecond)
                 rtsp.onVideoData(data, time: pts)
             }
             return 0
         } onParams: { [weak self] data in
-            guard let self, let data else { return 0 }
+            guard let self else { return 0 }
             self.rtsp = RTSPServer.setupListener(data)
             return 0
         }
@@ -83,26 +82,24 @@ fileprivate final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBu
 
     // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
 
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        encoder?.encodeFrame(sampleBuffer)
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        encoder?.encode(frame: sampleBuffer)
     }
 
     // MARK: - Shutdown
 
     func shutdown() {
         print("shutting down server")
-        if let session = session {
-            session.stopRunning()
-            self.session = nil
-        }
-        if let rtsp = rtsp {
-            rtsp.shutdownServer()
-            self.rtsp = nil
-        }
-        if let encoder = encoder {
-            encoder.shutdown()
-            self.encoder = nil
-        }
+        session?.stopRunning()
+        self.session = nil
+        rtsp?.shutdownServer()
+        self.rtsp = nil
+        encoder?.shutdown()
+        self.encoder = nil
         self.preview = nil
         self.output = nil
         self.captureQueue = nil
@@ -126,10 +123,10 @@ public struct CameraPreview: UIViewRepresentable {
         }
     }
 
-    let session: AVCaptureSession
+    let session: AVCaptureSession?
 
     public init() {
-        self.session = CameraServer.shared.session!
+        self.session = CameraServer.shared.session
     }
 
     public var view: VideoPreviewView = {
@@ -144,5 +141,5 @@ public struct CameraPreview: UIViewRepresentable {
         return self.view
     }
 
-    public func updateUIView(_ uiView: VideoPreviewView, context: Context) { }
+    public func updateUIView(_ uiView: VideoPreviewView, context: Context) {}
 }

@@ -1,0 +1,5 @@
+module NALUnitLib {
+    header "NALUnit.h"
+
+    export *
+}
