@@ -80,7 +80,7 @@ class RTSPClientConnection {
     private var RTCP: (CFData, CFSocket)?
     private var session: String?
     private var state: ServerState = .idle
-    private var packets: Int = 0 // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
+    private var packets: Int = 0  // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
     private var bytesSent: Int = 0
     private var ssrc: UInt32 = 0
     private var bFirst: Bool = true
@@ -239,10 +239,7 @@ class RTSPClientConnection {
 
         let config = server.configData
 
-        let avcC = config.withUnsafeBytes { pointer in
-            let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-            return avcCHeader(header: bytes, cBytes: config.count)
-        }
+        guard let avcC = AVCCHeader(header: config) else { return [] }
 
         guard let seqParams = SeqParamSet(avcC.sps) else {
             fatalError("Failed to parse SPS from avcC")
@@ -442,7 +439,7 @@ class RTSPClientConnection {
 
     // MARK: - RTP Header
     private func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
-        packet[packet.startIndex] = 0b10000000 // v=2
+        packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
 
         let seq = UInt16(packets & 0xffff)
@@ -481,10 +478,10 @@ class RTSPClientConnection {
         if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
             var buf = Data(capacity: 7 * MemoryLayout<UInt32>.size)
             buf += [
-                0x80, // version
-                200, // type == SR
-                0, // empty
-                6 // length (count of uint32_t minus 1)
+                0x80,  // version
+                200,  // type == SR
+                0,  // empty
+                6,  // length (count of uint32_t minus 1)
             ]
             buf += tonetLong(ssrc)
             withUnsafeBytes(of: UInt64(ntpBase).bigEndian) { ptr in

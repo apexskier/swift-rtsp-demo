@@ -3,9 +3,9 @@ import AVFoundation
 
 // VideoEncoder: Handles AVAssetWriter setup and frame encoding for H.264 video
 class VideoEncoder {
-    private var writer: AVAssetWriter!
-    private var writerInput: AVAssetWriterInput!
-    private(set) var path: String = ""
+    private let writer: AVAssetWriter!
+    private let writerInput: AVAssetWriterInput
+    let path: String
 
     // Initialize encoder for a given file path, height, and width
     init(path: String, height: Int, width: Int) {

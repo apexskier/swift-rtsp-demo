@@ -82,8 +82,8 @@ public final class NALUnit {
 
     // get the next byte, removing emulation prevention bytes
     public func getBYTE() -> UInt8 {
-        guard let start = self.start, idx < self.length else { return 0 }
-        var b = start.advanced(by: idx).pointee
+        guard let start, idx < self.length else { return 0 }
+        let b = start.advanced(by: idx).pointee
         idx += 1
         // to avoid start-code emulation, a byte 0x03 is inserted after any 00 00 pair. Discard that here.
         if b == 0 {
@@ -150,16 +150,15 @@ public final class NALUnit {
 // MARK: - SeqParamSet
 
 public struct SeqParamSet {
-    private(set) var frameBits: Int = 0
-    private(set) var cx: Int = 0
-    private(set) var cy: Int = 0
-    private(set) var interlaced: Bool = false
-    private(set) var profile: Int = 0
-    private(set) var level: Int = 0
-    private(set) var compatibility: UInt8 = 0
-    private(set) var pocType: Int = 0
-    private(set) var pocLSBBits: Int = 0
-    private(set) var nalu: NALUnit = NALUnit()
+    let frameBits: Int
+    private(set) var cx: Int
+    private(set) var cy: Int
+    let interlaced: Bool
+    let profile: Int
+    let level: Int
+    let compatibility: UInt8
+    let pocType: Int
+    let pocLSBBits: Int
 
     public init?(_ nalu: NALUnit) {
         guard nalu.type() == .sequenceParams else { return nil }
@@ -203,6 +202,7 @@ public struct SeqParamSet {
             let log2Minus4 = Int(nalu.getUE())
             pocLSBBits = log2Minus4 + 4
         } else if pocType == 1 {
+            pocLSBBits = 0
             nalu.skip(1)  // delta always zero
             _ = nalu.getSE()  // nsp_offset
             _ = nalu.getSE()  // nsp_top_to_bottom
@@ -212,8 +212,10 @@ public struct SeqParamSet {
             }
         } else if pocType != 2 {
             return nil
+        } else {
+            // else for POCtype == 2, no additional data in stream
+            pocLSBBits = 0
         }
-        // else for POCtype == 2, no additional data in stream
 
         _ = nalu.getUE()  // num_ref_frames
         _ = nalu.getBit()  // gaps_allowed
@@ -239,7 +241,6 @@ public struct SeqParamSet {
         }
 
         // .. rest are not interesting yet
-        self.nalu = nalu
     }
 }
 
@@ -259,12 +260,12 @@ extension NALUnit {
 
 // MARK: - SliceHeader
 
-fileprivate struct SliceHeader {
-    private(set) var framenum: Int = 0
-    private(set) var bField: Bool = false
-    private(set) var bBottom: Bool = false
-    private(set) var pocDelta: Int = 0
-    private(set) var pocLSB: Int = 0
+private struct SliceHeader {
+    let framenum: Int
+    private var bField: Bool
+    private var bBottom: Bool
+    let pocDelta: Int
+    let pocLSB: Int
 
     public init?(_ nalu: NALUnit, sps: SeqParamSet, deltaPresent: Bool) {
         switch nalu.type() {
@@ -294,46 +295,54 @@ fileprivate struct SliceHeader {
         if nalu.type() == .idrSlice {
             _ = nalu.getUE()  // idr_pic_id
         }
-        pocLSB = 0
         if sps.pocType == 0 {
             pocLSB = Int(nalu.getWord(sps.pocLSBBits))
-            pocDelta = 0
             if deltaPresent && !bField {
                 pocDelta = nalu.getSE()
+            } else {
+                pocDelta = 0
             }
+        } else {
+            pocLSB = 0
+            pocDelta = 0
         }
     }
 }
 
 // MARK: - avcCHeader
 
-public struct avcCHeader {
-    private(set) var lengthSize: Int = 0
+public struct AVCCHeader {
+    private(set) var lengthSize: Int
     private(set) var sps: NALUnit = NALUnit()
     private(set) var pps: NALUnit = NALUnit()
 
-    public init(header: UnsafePointer<UInt8>, cBytes: Int) {
-        guard cBytes >= 8 else { return }
-        let pEnd = header.advanced(by: cBytes)
-        lengthSize = Int(header[4] & 3) + 1
-        let cSeq = Int(header[5] & 0x1f)
-        var p = header.advanced(by: 6)
+    public init?(header data: Data) {
+        guard data.count >= 8 else { return nil }
+        lengthSize = Int(data[4] & 3) + 1
+        let cSeq = Int(data[5] & 0x1f)
+        var p = 6
         for i in 0..<cSeq {
-            guard p.advanced(by: 2) <= pEnd else { return }
-            let cThis = Int(p[0]) << 8 | Int(p[1])
-            p = p.advanced(by: 2)
-            guard p.advanced(by: cThis) <= pEnd else { return }
+            if p + 2 > data.count { return }
+            let cThis = Int(data[p] << 8 | data[p + 1])
+            p += 2
+            if p + cThis > data.count { return }
             if i == 0 {
-                sps = NALUnit(start: p, length: cThis)
+                sps = data.withUnsafeBytes { ptr in
+                    let bytes = ptr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                    return NALUnit(start: bytes.advanced(by: p), length: cThis)
+                }
             }
             p = p.advanced(by: cThis)
         }
-        guard p.advanced(by: 3) < pEnd else { return }
-        let cPPS = Int(p[0])
+        if p + 3 >= data.count { return }
+        let cPPS = data[p]
         if cPPS > 0 {
-            let cThis = Int(p[1]) << 8 | Int(p[2])
-            p = p.advanced(by: 3)
-            pps = NALUnit(start: p, length: cThis)
+            let cThis = Int(data[p + 1] << 8 | data[p + 2])
+            p += 3
+            pps = data.withUnsafeBytes { ptr in
+                let bytes = ptr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                return NALUnit(start: bytes.advanced(by: p), length: cThis)
+            }
         }
     }
 }
@@ -350,7 +359,7 @@ public final class POCState {
 
     public init() {}
 
-    public func setHeader(_ avc: avcCHeader) {
+    public func setHeader(_ avc: AVCCHeader) {
         self.sps = SeqParamSet(avc.sps)
         let pps = avc.pps
         pps.resetBitstream()
@@ -360,32 +369,31 @@ public final class POCState {
         deltaPresent = pps.getBit() != 0
     }
 
-    public func getPOC(nal: NALUnit, pPOC: inout Int) -> Bool {
-        guard let sps else { return false }
-        let maxlsb = 1 << sps.pocLSBBits
-        if let slice = SliceHeader(nal, sps: sps, deltaPresent: deltaPresent) {
-            frameNum = slice.framenum
-            var prevMSB = self.prevMSB
-            var prevLSB = self.prevLSB
-            if nal.type() == .idrSlice {
-                prevLSB = 0
-                prevMSB = 0
-            }
-            let lsb = slice.pocLSB
-            var MSB = prevMSB
-            if (lsb < prevLSB) && ((prevLSB - lsb) >= (maxlsb / 2)) {
-                MSB = prevMSB + maxlsb
-            } else if (lsb > prevLSB) && ((lsb - prevLSB) > (maxlsb / 2)) {
-                MSB = prevMSB - maxlsb
-            }
-            if nal.isRefPic() {
-                self.prevLSB = lsb
-                self.prevMSB = MSB
-            }
-            pPOC = MSB + lsb
-            lastlsb = lsb
-            return true
+    public func getPOC(nal: NALUnit) -> Int? {
+        guard let sps, let slice = SliceHeader(nal, sps: sps, deltaPresent: deltaPresent) else {
+            return nil
         }
-        return false
+
+        frameNum = slice.framenum
+        var prevMSB = self.prevMSB
+        var prevLSB = self.prevLSB
+        if nal.type() == .idrSlice {
+            prevLSB = 0
+            prevMSB = 0
+        }
+        let lsb = slice.pocLSB
+        var MSB = prevMSB
+        let maxlsb = 1 << sps.pocLSBBits
+        if (lsb < prevLSB) && ((prevLSB - lsb) >= (maxlsb / 2)) {
+            MSB = prevMSB + maxlsb
+        } else if (lsb > prevLSB) && ((lsb - prevLSB) > (maxlsb / 2)) {
+            MSB = prevMSB - maxlsb
+        }
+        if nal.isRefPic() {
+            self.prevLSB = lsb
+            self.prevMSB = MSB
+        }
+        lastlsb = lsb
+        return MSB + lsb
     }
 }

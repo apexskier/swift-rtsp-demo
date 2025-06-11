@@ -217,9 +217,8 @@ class AVEncoder {
             if let avcC, avcC.count > 4 {
                 // extract size of length field
                 lengthSize = Int((avcC[4] & 3) + 1)
-                let avc = avcC.withUnsafeBytes { pointer in
-                    let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                    return avcCHeader(header: bytes, cBytes: avcC.count)
+                guard let avc = AVCCHeader(header: avcC) else {
+                    return false
                 }
                 pocState.setHeader(avc)
                 return true
@@ -352,7 +351,8 @@ class AVEncoder {
                     let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
                     return NALUnit(start: bytes, length: d.count)
                 }
-                if pocState.getPOC(nal: nal, pPOC: &poc) {
+                if let value = pocState.getPOC(nal: nal) {
+                    poc = value
                     break
                 }
             }
@@ -398,6 +398,8 @@ class AVEncoder {
             // typically there are a couple of NALUs per frame in iOS encoding.
             // This is not general-purpose: it assumes that arbitrary slice ordering is not allowed.
             var bNew = false
+
+            // sei and param sets go with following nalu
             if prevNalType < 6 {
                 if naltype >= 6 {
                     bNew = true
@@ -421,6 +423,7 @@ class AVEncoder {
         prevNalIdc = idc
         if pendingNALU == nil {
             pendingNALU = []
+            pendingNALU?.reserveCapacity(2)
         }
         pendingNALU?.append(nalu)
     }
