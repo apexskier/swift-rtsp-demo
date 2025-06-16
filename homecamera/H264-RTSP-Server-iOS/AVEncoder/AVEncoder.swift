@@ -167,22 +167,25 @@ class AVEncoder {
     }
 
     private func onParamsCompletion() {
-        if parseParams(headerWriter?.path ?? "") {
-            if let paramsBlock, let avcC {
-                _ = paramsBlock(avcC)
-            }
-            headerWriter = nil
-            swapping = false
-            if let writer {
-                inputFile = try? FileHandle(forReadingFrom: URL(fileURLWithPath: writer.path))
-                readQueue = DispatchQueue(label: "uk.co.gdcl.avencoder.read")
-                if let inputFile {
-                    readSource = DispatchSource.makeReadSource(fileDescriptor: inputFile.fileDescriptor, queue: readQueue)
-                    readSource?.setEventHandler { [weak self] in self?.onFileUpdate() }
-                    readSource?.resume()
-                }
-            }
+        guard let headerWriter, let writer else {
+            return
         }
+        guard parseParams(headerWriter.path) else {
+            return
+        }
+        if let paramsBlock, let avcC {
+            _ = paramsBlock(avcC)
+        }
+        self.headerWriter = nil
+        swapping = false
+        inputFile = try? FileHandle(forReadingFrom: URL(fileURLWithPath: writer.path))
+        guard let inputFile else {
+            return
+        }
+        readQueue = DispatchQueue(label: "uk.co.gdcl.avencoder.read")
+        readSource = DispatchSource.makeReadSource(fileDescriptor: inputFile.fileDescriptor, queue: readQueue)
+        readSource?.setEventHandler { [weak self] in self?.onFileUpdate() }
+        readSource?.resume()
     }
 
     private func parseParams(_ path: String) -> Bool {
@@ -284,13 +287,16 @@ class AVEncoder {
     }
 
     private func onFileUpdate() {
-        guard let inputFile else { return }
+        guard let inputFile, let writer else { return }
 
         // called whenever there is more data to read in the main encoder output file.
 
         let offset = try! inputFile.offset()
-        let st = try! inputFile.seekToEnd()
-        try! inputFile.seek(toOffset: offset)
+        // let st = try! inputFile.seekToEnd()
+        // try! inputFile.seek(toOffset: offset)
+        guard let st = try? FileManager.default.attributesOfItem(atPath: writer.path)[.size] as? UInt64 else {
+            return
+        }
         let cReady = Int(st - offset)
 
         // locate the mdat atom if needed
@@ -299,7 +305,7 @@ class AVEncoder {
                 let hdr = inputFile.readData(ofLength: 8)
                 let lenAtom = to_host(hdr)
                 let nameAtom = to_host(hdr.advanced(by: 4))
-                if nameAtom == UInt32("mdat".utf8.reduce(0) { $0 << 8 | UInt32($1) }) {
+                if nameAtom == MP4AtomType("mdat") {
                     foundMDAT = true
                     posMDAT = inputFile.offsetInFile - 8
                 } else {
@@ -386,9 +392,8 @@ class AVEncoder {
     // combine multiple NALUs into a single frame, and in the process, convert to BSF
     // by adding 00 00 01 startcodes before each NALU.
     private func onNALU(_ nalu: Data) {
-        let pNal = nalu.startIndex
-        let idc = Int(nalu[pNal] & 0x60)
-        let naltype = Int(nalu[pNal] & 0x1f)
+        let idc = Int(nalu[0] & 0x60)
+        let naltype = Int(nalu[0] & 0x1f)
         if pendingNALU != nil {
             let nal = nalu.withUnsafeBytes { pointer in
                 let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)

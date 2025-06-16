@@ -3,7 +3,7 @@
 // Basic parsing of H.264 NAL Units
 //
 // Ported from C++ by Geraint Davies, March 2004
-// Swift port by [Your Name], 2025
+// Swift port by Cameron Little, 2025
 //
 // Copyright (c) GDCL 2004-2008 http://www.gdcl.co.uk/license.htm
 
