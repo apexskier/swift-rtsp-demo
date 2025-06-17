@@ -65,11 +65,6 @@ class RTSPServer {
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
     }
 
-    // MARK: - Factory
-    static func setupListener(_ configData: Data) -> RTSPServer? {
-        RTSPServer(configData: configData)
-    }
-
     // MARK: - Accept
     private func onAccept(childHandle: CFSocketNativeHandle) {
         if let conn = RTSPClientConnection(socketHandle: childHandle, server: self) {

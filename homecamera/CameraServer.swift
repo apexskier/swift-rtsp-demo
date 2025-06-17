@@ -110,7 +110,7 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             }
         } onParams: { [weak self] data in
             guard let self else { return }
-            self.rtsp = RTSPServer.setupListener(data)
+            self.rtsp = RTSPServer(configData: data)
         }
 
         self.encoder = encoder
