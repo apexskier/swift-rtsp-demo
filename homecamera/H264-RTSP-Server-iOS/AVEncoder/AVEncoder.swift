@@ -1,9 +1,9 @@
-import Foundation
 import AVFoundation
+import Foundation
 
 // Typealiases for handler blocks
-public typealias EncoderHandler = (_ data: [Data], _ pts: Double) -> Int
-public typealias ParamHandler = (_ params: Data) -> Int
+public typealias EncoderHandler = (_ data: [Data], _ pts: Double) -> Void
+public typealias ParamHandler = (_ params: Data) -> Void
 
 // store the calculated POC with a frame ready for timestamp assessment
 // (recalculating POC out of order will get an incorrect result)
@@ -81,11 +81,15 @@ class AVEncoder {
         let path = NSTemporaryDirectory().appending("params.mp4")
         headerWriter = VideoEncoder(path: path, height: height, width: width)
         times = []
+        times.reserveCapacity(10)
         currentFile = 1
         writer = VideoEncoder(path: makeFilename(), height: height, width: width)
     }
 
-    func encode(withBlock block: @escaping EncoderHandler, onParams paramsHandler: @escaping ParamHandler) {
+    func encode(
+        withBlock block: @escaping EncoderHandler,
+        onParams paramsHandler: @escaping ParamHandler
+    ) {
         outputBlock = block
         paramsBlock = paramsHandler
         needParams = true
@@ -103,9 +107,10 @@ class AVEncoder {
             // Only when we've got that do we start reading from the main file.
             needParams = false
             if headerWriter?.encodeFrame(sampleBuffer) == true {
-                headerWriter?.finishWithCompletionHandler { [weak self] in
-                    self?.onParamsCompletion()
-                }
+                headerWriter?
+                    .finishWithCompletionHandler { [weak self] in
+                        self?.onParamsCompletion()
+                    }
             }
         }
         objc_sync_exit(self)
@@ -135,14 +140,16 @@ class AVEncoder {
                 // first, suspend the read source
                 readSource?.cancel()
                 // execute the next step as a block on the same queue, to be sure the suspend is done
-                readQueue?.async { [weak self] in
-                    // finish the file, writing moov, before reading any more from the file
-                    // since we don't yet know where the mdat ends
-                    self?.readSource = nil
-                    oldVideo?.finishWithCompletionHandler {
-                        self?.swapFiles(oldVideo?.path ?? "")
+                readQueue?
+                    .async { [weak self] in
+                        // finish the file, writing moov, before reading any more from the file
+                        // since we don't yet know where the mdat ends
+                        self?.readSource = nil
+                        oldVideo?
+                            .finishWithCompletionHandler {
+                                self?.swapFiles(oldVideo?.path ?? "")
+                            }
                     }
-                }
             }
         }
         _ = writer?.encodeFrame(sampleBuffer)
@@ -173,8 +180,8 @@ class AVEncoder {
         guard parseParams(headerWriter.path) else {
             return
         }
-        if let paramsBlock, let avcC {
-            _ = paramsBlock(avcC)
+        if let avcC {
+            paramsBlock?(avcC)
         }
         self.headerWriter = nil
         swapping = false
@@ -183,13 +190,18 @@ class AVEncoder {
             return
         }
         readQueue = DispatchQueue(label: "uk.co.gdcl.avencoder.read")
-        readSource = DispatchSource.makeReadSource(fileDescriptor: inputFile.fileDescriptor, queue: readQueue)
+        readSource = DispatchSource.makeReadSource(
+            fileDescriptor: inputFile.fileDescriptor,
+            queue: readQueue
+        )
         readSource?.setEventHandler { [weak self] in self?.onFileUpdate() }
         readSource?.resume()
     }
 
     private func parseParams(_ path: String) -> Bool {
-        guard let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
+        guard let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return false
+        }
         defer { try? file.close() }
         let s = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
         var movie = MP4Atom(at: 0, size: Int64(s), type: MP4AtomType("file"), inFile: file)
@@ -207,14 +219,16 @@ class AVEncoder {
         var stsd: MP4Atom? = nil
         if var trak {
             if var media = trak.child(ofType: "mdia"),
-               var minf = media.child(ofType: "minf"),
-               var stbl = minf.child(ofType: "stbl") {
+                var minf = media.child(ofType: "minf"),
+                var stbl = minf.child(ofType: "stbl")
+            {
                 stsd = stbl.child(ofType: "stsd")
             }
         }
         if var stsd = stsd,
-           var avc1 = stsd.child(ofType: "avc1", startAt: 8),
-           let esd = avc1.child(ofType: "avcC", startAt: 78) {
+            var avc1 = stsd.child(ofType: "avc1", startAt: 8),
+            let esd = avc1.child(ofType: "avcC", startAt: 78)
+        {
             // this is the avcC record that we are looking for
             avcC = esd.read(size: Int(esd.length))
             if let avcC, avcC.count > 4 {
@@ -256,7 +270,10 @@ class AVEncoder {
         if let writer {
             self.inputFile = try? FileHandle(forReadingFrom: URL(fileURLWithPath: writer.path))
             if let inputFile = self.inputFile {
-                readSource = DispatchSource.makeReadSource(fileDescriptor: inputFile.fileDescriptor, queue: readQueue)
+                readSource = DispatchSource.makeReadSource(
+                    fileDescriptor: inputFile.fileDescriptor,
+                    queue: readQueue
+                )
                 readSource?.setEventHandler { [weak self] in self?.onFileUpdate() }
                 readSource?.resume()
             }
@@ -294,7 +311,10 @@ class AVEncoder {
         let offset = try! inputFile.offset()
         // let st = try! inputFile.seekToEnd()
         // try! inputFile.seek(toOffset: offset)
-        guard let st = try? FileManager.default.attributesOfItem(atPath: writer.path)[.size] as? UInt64 else {
+        guard
+            let st = try? FileManager.default.attributesOfItem(atPath: writer.path)[.size]
+                as? UInt64
+        else {
             return
         }
         let cReady = Int(st - offset)
@@ -330,7 +350,7 @@ class AVEncoder {
             let bytes = frame.reduce(0) { $0 + $1.count }
             bitspersecond += bytes * 8
         }
-        _ = outputBlock?(frame, pts)
+        outputBlock?(frame, pts)
     }
 
     private func processStoredFrames() {

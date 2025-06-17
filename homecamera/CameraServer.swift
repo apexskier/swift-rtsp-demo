@@ -56,16 +56,14 @@ private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBuffer
         // Create an encoder
         let encoder = AVEncoder(height: 480, width: 720)
         encoder.encode { [weak self] data, pts in
-            guard let self else { return 0 }
+            guard let self else { return }
             if let rtsp {
-                rtsp.bitrate = Int(encoder.bitspersecond)
+                rtsp.bitrate = encoder.bitspersecond
                 rtsp.onVideoData(data, time: pts)
             }
-            return 0
         } onParams: { [weak self] data in
-            guard let self else { return 0 }
+            guard let self else { return }
             self.rtsp = RTSPServer.setupListener(data)
-            return 0
         }
 
         self.encoder = encoder
