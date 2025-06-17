@@ -10,22 +10,69 @@ import AVFoundation
 import Foundation
 import SwiftUI
 
-private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+@Observable
+final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
-    static var shared: CameraServer = {
-        let s = CameraServer()
-        try? s.startup()
-        return s
-    }()
+    static let shared = CameraServer()
 
     // MARK: - Properties
 
     var session: AVCaptureSession?
-    var preview: AVCaptureVideoPreviewLayer?
+    let deviceDiscovery = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [
+            .builtInWideAngleCamera,
+            .builtInUltraWideCamera,
+            .builtInTelephotoCamera,
+            .builtInDualCamera,
+            .builtInDualWideCamera,
+            .builtInTripleCamera,
+            .continuityCamera,
+
+            // #if os(macOS)
+            // .deskViewCamera,
+            // #endif
+            .external,
+        ],
+        mediaType: .video,
+        position: .unspecified
+    )
+    var device = AVCaptureDevice.default(for: .video) {
+        didSet {
+            guard
+                let session,
+                let device,
+                let input = try? AVCaptureDeviceInput(device: device)
+            else { return }
+            session.beginConfiguration()
+            defer {
+                session.commitConfiguration()
+            }
+            session.inputs.forEach { input in
+                session.removeInput(input)
+            }
+            session.addInput(input)
+        }
+    }
     private var output: AVCaptureVideoDataOutput?
     private var captureQueue: DispatchQueue?
     private var encoder: AVEncoder?
     private var rtsp: RTSPServer?
+
+    init(
+        session: AVCaptureSession? = nil,
+        output: AVCaptureVideoDataOutput? = nil,
+        captureQueue: DispatchQueue? = nil,
+        encoder: AVEncoder? = nil,
+        rtsp: RTSPServer? = nil
+    ) {
+        self.session = session
+        self.output = output
+        self.captureQueue = captureQueue
+        self.encoder = encoder
+        self.rtsp = rtsp
+
+        // TODO: observe device discovery changes using KV
+    }
 
     // MARK: - Startup
 
@@ -36,14 +83,14 @@ private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         // Create capture device with video input
         let session = AVCaptureSession()
-        guard let dev = AVCaptureDevice.default(for: .video),
+        guard let dev = device,
             let input = try? AVCaptureDeviceInput(device: dev),
             session.canAddInput(input)
         else { return }
         session.addInput(input)
 
         // Create an output for YUV output with self as delegate
-        captureQueue = DispatchQueue(label: "uk.co.gdcl.avencoder.capture")
+        captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(self, queue: captureQueue)
         output.videoSettings = [
@@ -68,11 +115,8 @@ private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         self.encoder = encoder
 
-        // Start capture and a preview layer
+        // Start capture
         session.startRunning()
-        let preview = AVCaptureVideoPreviewLayer(session: session)
-        preview.videoGravity = .resizeAspectFill
-        self.preview = preview
 
         self.session = session
         self.output = output
@@ -98,7 +142,6 @@ private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBuffer
         self.rtsp = nil
         encoder?.shutdown()
         self.encoder = nil
-        self.preview = nil
         self.output = nil
         self.captureQueue = nil
     }
@@ -113,31 +156,29 @@ private final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBuffer
 public struct CameraPreview: UIViewRepresentable {
     public class VideoPreviewView: UIView {
         public override class var layerClass: AnyClass {
-            return AVCaptureVideoPreviewLayer.self
+            AVCaptureVideoPreviewLayer.self
         }
 
-        var videoPreviewLayer: AVCaptureVideoPreviewLayer {
-            return layer as! AVCaptureVideoPreviewLayer
+        var videoPreviewLayer: AVCaptureVideoPreviewLayer? {
+            layer as? AVCaptureVideoPreviewLayer
         }
     }
 
     let session: AVCaptureSession?
 
-    public init() {
-        self.session = CameraServer.shared.session
-    }
-
-    public var view: VideoPreviewView = {
+    var view: VideoPreviewView = {
         let view = VideoPreviewView()
         view.backgroundColor = .black
-        view.videoPreviewLayer.videoGravity = .resizeAspectFill
+        view.videoPreviewLayer?.videoGravity = .resizeAspectFill
         return view
     }()
 
     public func makeUIView(context: Context) -> VideoPreviewView {
-        self.view.videoPreviewLayer.session = self.session
+        self.view.videoPreviewLayer?.session = self.session
         return self.view
     }
 
-    public func updateUIView(_ uiView: VideoPreviewView, context: Context) {}
+    public func updateUIView(_ uiView: VideoPreviewView, context: Context) {
+        print("update ui view")
+    }
 }

@@ -70,8 +70,8 @@ class AVEncoder {
     private var firstpts: Double = -1
 
     // MARK: - Constants
-    private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024 // 50 MB switch point
-    private let maxFilenameIndex = 5 // filenames "capture1.mp4" wraps at capture5.mp4
+    private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
+    private let maxFilenameIndex = 5  // filenames "capture1.mp4" wraps at capture5.mp4
 
     // MARK: - Public API
 
@@ -189,7 +189,7 @@ class AVEncoder {
         guard let inputFile else {
             return
         }
-        readQueue = DispatchQueue(label: "uk.co.gdcl.avencoder.read")
+        readQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.read")
         readSource = DispatchSource.makeReadSource(
             fileDescriptor: inputFile.fileDescriptor,
             queue: readQueue
