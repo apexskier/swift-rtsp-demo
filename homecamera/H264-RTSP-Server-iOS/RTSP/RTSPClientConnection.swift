@@ -92,6 +92,7 @@ class RTSPClientConnection {
     private var sentRTCP: Date?
     private var recvRTCP: CFSocket?
     private var rlsRTCP: CFRunLoopSource?
+    private let clock = 90000 // RTP clock rate for H264
 
     // MARK: - Initializer
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
@@ -284,7 +285,7 @@ class RTSPClientConnection {
             "b=TIAS:\(server.bitrate)",
             "a=maxprate:\(packets).0000",
             "a=control:streamid=1",
-            "a=rtpmap:96 H264/90000",
+            "a=rtpmap:96 H264/\(clock)",
             "a=mimetype:string;\"video/H264\"",
             "a=framesize:96 \(cx)-\(cy)",
             "a=Width:integer;\(cx)",
@@ -456,7 +457,7 @@ class RTSPClientConnection {
             let interval = now.timeIntervalSince(ref)
             ntpBase = UInt64(interval * Double(1 << 32))
         }
-        let rtp = UInt64((pts - ptsBase) * 90000) + rtpBase
+        let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
         let rtpBytes = tonetLong(UInt32(truncatingIfNeeded: rtp))
         packet.replaceSubrange(4..<8, with: rtpBytes)
 
@@ -512,6 +513,7 @@ class RTSPClientConnection {
     func onRTCP(_ data: CFData) {
         // RTCP receive handler (not implemented)
         print("RTCP packet received")
+        let packet = RTCPMessage(data: data as Data, clock: clock)
     }
 
     // MARK: - Teardown
