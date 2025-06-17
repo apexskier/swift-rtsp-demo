@@ -406,7 +406,7 @@ class RTSPClientConnection {
                 packet.replaceSubrange(rtpHeaderSize..., with: nalu)
                 sendPacket(packet: packet, length: countBytes + rtpHeaderSize)
             } else {
-                var pointerNalu = 0
+                var pointerNalu = nalu.startIndex
                 let naluHeader = nalu[pointerNalu]
                 pointerNalu += 1
                 countBytes -= 1
@@ -418,7 +418,7 @@ class RTSPClientConnection {
                     let bEnd = cThis == countBytes
                     writeHeader(&packet, marker: bLast && bEnd, time: pts)
 
-                    packet[rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
+                    packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
                     var fuHeader = naluHeader & 0x1f
                     if bStart {
                         fuHeader |= 0x80
@@ -426,8 +426,8 @@ class RTSPClientConnection {
                     } else if bEnd {
                         fuHeader |= 0x40
                     }
-                    packet[rtpHeaderSize + 1] = fuHeader
-                    packet[rtpHeaderSize + 2..<(rtpHeaderSize + 2 + cThis)] =
+                    packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
+                    packet[packet.startIndex + rtpHeaderSize + 2..<(packet.startIndex + rtpHeaderSize + 2 + cThis)] =
                         nalu[pointerNalu..<(pointerNalu + cThis)]
                     sendPacket(packet: packet, length: cThis + rtpHeaderSize + 2)
 

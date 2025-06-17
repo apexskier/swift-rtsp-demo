@@ -366,11 +366,10 @@ class AVEncoder {
         if poc == 0 {
             processStoredFrames()
             var pts: Double = 0
-            let index = 0
             objc_sync_enter(times)
-            if times.count > 0 {
-                pts = times[index]
-                times.remove(at: index)
+            if let first = times.first {
+                pts = first
+                times.removeFirst()
             }
             objc_sync_exit(times)
             if let pendingNALU {
