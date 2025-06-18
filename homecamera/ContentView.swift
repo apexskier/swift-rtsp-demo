@@ -14,7 +14,16 @@ struct ContentView: View {
 
     var body: some View {
         VStack {
-            Text(cameraServer.getURL())
+            if let url = cameraServer.getURL() {
+                HStack {
+                    Text(url)
+                    Button {
+                        UIPasteboard.general.setValue(url, forPasteboardType: UTType.url.identifier)
+                    } label: {
+                        Label("Copy URL", systemImage: "doc.on.clipboard")
+                    }
+                }
+            }
 
             Picker(
                 selection: .init(

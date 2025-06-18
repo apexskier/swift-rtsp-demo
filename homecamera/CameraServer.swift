@@ -196,8 +196,9 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
     // MARK: - Utilities
 
-    func getURL() -> String {
-        "rtsp://\(RTSPServer.getIPAddress() ?? "0.0.0.0")/"
+    func getURL() -> String? {
+        guard let rtsp else { return nil }
+        return "rtsp://\(RTSPServer.getIPAddress() ?? "0.0.0.0"):\(rtsp.port)/"
     }
 }
 

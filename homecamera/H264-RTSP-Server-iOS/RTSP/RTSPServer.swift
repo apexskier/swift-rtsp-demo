@@ -8,6 +8,7 @@ class RTSPServer {
     private var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
     var bitrate: Int = 0
+    let port: UInt16 = 554
 
     // MARK: - Initializer
     init?(configData: Data) {
@@ -52,7 +53,7 @@ class RTSPServer {
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(554).bigEndian
+        addr.sin_port = in_port_t(port).bigEndian
         addr.sin_addr = in_addr(s_addr: INADDR_ANY)
         let dataAddr = Data(bytes: &addr, count: MemoryLayout<sockaddr_in>.size)
         let cfDataAddr = dataAddr as CFData
