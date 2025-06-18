@@ -122,7 +122,6 @@ class RTSPClientConnection {
     private let clock = 90000  // RTP clock rate for H264
     private let serverPort: UInt16 = 6971
 
-    // MARK: - Initializer
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
         self.server = server
         var context = CFSocketContext(
@@ -159,14 +158,9 @@ class RTSPClientConnection {
         self.state = .idle
     }
 
-    // MARK: - Data Handling
-    func onSocketData(_ data: CFData) {
+    private func onSocketData(_ data: CFData) {
         if CFDataGetLength(data) == 0 {
-            tearDown()
-            if let socket {
-                CFSocketInvalidate(socket)
-                self.socket = nil
-            }
+            shutdown()
             server?.shutdownConnection(self)
             return
         }
@@ -294,8 +288,7 @@ class RTSPClientConnection {
         }
     }
 
-    // MARK: - SDP Creation
-    func makeSDP() -> [String] {
+    private func makeSDP() -> [String] {
         guard let server else { return [] }
 
         let config = server.configData
@@ -353,8 +346,7 @@ class RTSPClientConnection {
         ]
     }
 
-    // MARK: - Session Creation
-    func createSession(portRTP: Int, portRTCP: Int) {
+    private func createSession(portRTP: Int, portRTCP: Int) {
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
 
@@ -399,7 +391,7 @@ class RTSPClientConnection {
         )
     }
 
-    func createInterleavedSession(channelRTP: UInt8, channelRTCP: UInt8) {
+    private func createInterleavedSession(channelRTP: UInt8, channelRTCP: UInt8) {
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
 
@@ -520,7 +512,6 @@ class RTSPClientConnection {
         }
     }
 
-    // MARK: - RTP Header
     private func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
         packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
@@ -560,8 +551,7 @@ class RTSPClientConnection {
         return wrapped
     }
 
-    // MARK: - RTP/RTCP Packet Sending
-    func sendPacket(packet: Data, length: Int) {
+    private func sendPacket(packet: Data, length: Int) {
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
 
@@ -624,15 +614,13 @@ class RTSPClientConnection {
         }
     }
 
-    // MARK: - RTCP
-    func onRTCP(_ data: CFData) {
+    private func onRTCP(_ data: CFData) {
         // RTCP receive handler (not implemented)
         print("RTCP packet received")
         _ = RTCPMessage(data: data as Data, clock: clock)
     }
 
-    // MARK: - Teardown
-    func tearDown() {
+    private func tearDown() {
         sessionConnection?.tearDown()
         sessionConnection = nil
         if let recvRTCP {
@@ -642,7 +630,6 @@ class RTSPClientConnection {
         session = nil
     }
 
-    // MARK: - Shutdown
     func shutdown() {
         tearDown()
         if let socket {
