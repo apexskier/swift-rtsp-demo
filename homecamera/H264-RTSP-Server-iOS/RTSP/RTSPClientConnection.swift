@@ -72,12 +72,39 @@ private enum ServerState {
     case idle, setup, playing
 }
 
+struct RTSPSessionInterleaved {
+    let channelRTP: UInt8
+    let channelRTCP: UInt8
+}
+
+struct RTSPSessionUDP {
+    let addressRTP: CFData
+    let socketRTP: CFSocket
+    let addressRTCP: CFData
+    let socketRTCP: CFSocket
+}
+
+private enum RTSPSession {
+    case udp(RTSPSessionUDP)
+    case interleaved(RTSPSessionInterleaved)
+
+    func tearDown() {
+        switch self {
+        case .interleaved:
+            break
+        case .udp(let session):
+            CFSocketInvalidate(session.socketRTP)
+            CFSocketInvalidate(session.socketRTCP)
+        }
+    }
+}
+
 class RTSPClientConnection {
     private var socket: CFSocket?
+    private var address: CFData?
+    private var sessionConnection: RTSPSession?
     private weak var server: RTSPServer?
     private var rls: CFRunLoopSource?
-    private var RTP: (address: CFData, socket: CFSocket)?
-    private var RTCP: (address: CFData, socket: CFSocket)?
     private var session: String?
     private var state: ServerState = .idle
     private var packets: Int = 0  // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
@@ -108,11 +135,14 @@ class RTSPClientConnection {
         self.socket = CFSocketCreateWithNative(
             nil,
             socketHandle,
-            CFSocketCallBackType.dataCallBack.rawValue,
+            CFSocketCallBackType.acceptCallBack.rawValue
+                | CFSocketCallBackType.dataCallBack.rawValue,
             { (s, callbackType, address, data, info) in
                 guard let info else { return }
                 let conn = Unmanaged<RTSPClientConnection>.fromOpaque(info).takeUnretainedValue()
                 switch callbackType {
+                case .acceptCallBack:
+                    conn.address = address
                 case .dataCallBack:
                     if let data {
                         conn.onSocketData(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue())
@@ -123,7 +153,7 @@ class RTSPClientConnection {
             },
             &context
         )
-        guard let socket = self.socket else { return nil }
+        guard let socket else { return nil }
         self.rls = CFSocketCreateRunLoopSource(nil, socket, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), self.rls, .commonModes)
         self.state = .idle
@@ -133,7 +163,7 @@ class RTSPClientConnection {
     func onSocketData(_ data: CFData) {
         if CFDataGetLength(data) == 0 {
             tearDown()
-            if let socket = socket {
+            if let socket {
                 CFSocketInvalidate(socket)
                 self.socket = nil
             }
@@ -198,8 +228,36 @@ class RTSPClientConnection {
                         response = msg.createResponse(code: 200, text: "OK")
                         response += [
                             "Session: \(session)",
-                            "Transport: RTP/AVP;unicast;client_port=\(portRTP)-\(portRTCP);server_port=6970-6971",
+                            "Transport: RTP/AVP;unicast;client_port=\(portRTP)-\(portRTCP);server_port=6970-\(serverPort)",
                         ]
+                    }
+                }
+
+                if response.isEmpty {
+                    for s in props {
+                        if s.hasPrefix("interleaved=") {
+                            let val = String(s.dropFirst(12))
+                            let channels = val.components(separatedBy: "-")
+                                .compactMap({ UInt8($0) })
+                            if let channelRTP = channels.first {
+                                let channelRTCP =
+                                    channels.count > 1 ? channels[1] : (channelRTP + 1)
+
+                                createInterleavedSession(
+                                    channelRTP: channelRTP,
+                                    channelRTCP: channelRTCP
+                                )
+
+                                if let session {
+                                    response = msg.createResponse(code: 200, text: "OK")
+                                    response += [
+                                        "Session: \(session)",
+                                        "Transport: RTP/AVP/TCP;unicast;interleaved=0-1",
+                                    ]
+                                }
+                                break
+                            }
+                        }
                     }
                 }
             }
@@ -274,7 +332,6 @@ class RTSPClientConnection {
             let sockaddr = ptr.load(as: sockaddr_in.self)
             return String(cString: inet_ntoa(sockaddr.sin_addr))
         }
-        print("server.bitrate \(server.bitrate)")
         let packets = (server.bitrate / (maxPacketSize * 8)) + 1
         return [
             "v=0",
@@ -316,7 +373,6 @@ class RTSPClientConnection {
         else {
             fatalError("Failed to create RTP socket")
         }
-        RTP = (addrRTP, socketRTP)
 
         paddr.sin_port = in_port_t(UInt16(portRTCP).bigEndian)
         guard let addrRTCP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
@@ -326,8 +382,39 @@ class RTSPClientConnection {
         else {
             fatalError("Failed to create RTCP socket")
         }
-        RTCP = (addrRTCP, socketRTCP)
 
+        self.sessionConnection = .udp(
+            RTSPSessionUDP(
+                addressRTP: addrRTP,
+                socketRTP: socketRTP,
+                addressRTCP: addrRTCP,
+                socketRTCP: socketRTCP
+            )
+        )
+
+        flagValidSession()
+
+        print(
+            "Started session \(self.session ?? "INVALID") with RTP port \(portRTP) and RTCP port \(portRTCP)"
+        )
+    }
+
+    func createInterleavedSession(channelRTP: UInt8, channelRTCP: UInt8) {
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+
+        guard socket != nil else { return }
+
+        self.sessionConnection = .interleaved(
+            .init(channelRTP: channelRTP, channelRTCP: channelRTCP)
+        )
+
+        flagValidSession()
+
+        print("Started interleaved session \(self.session ?? "INVALID")")
+    }
+
+    private func flagValidSession() {
         // reader reports received here
         var info = CFSocketContext()
         info.info = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
@@ -374,8 +461,6 @@ class RTSPClientConnection {
         self.sentRTCP = nil
         self.packetsReported = 0
         self.bytesReported = 0
-
-        print("Started session \(sessionid) with RTP port \(portRTP) and RTCP port \(portRTCP)")
     }
 
     // MARK: - Video Data
@@ -461,16 +546,45 @@ class RTSPClientConnection {
         packet.replaceSubrange(8..<12, with: ssrcBytes)
     }
 
+    private static func interleavePacket(
+        _ packet: Data,
+        channel: UInt8,
+        length: UInt16? = nil
+    ) -> Data {
+        // interleaved RFC 2326 10.12
+        var wrapped = Data(count: packet.count + 4)
+        wrapped[0] = 0x24  // '$'
+        wrapped[1] = channel
+        wrapped.replaceSubrange(2..<4, with: tonetShort(length ?? UInt16(packet.count)))
+        wrapped.replaceSubrange(4..., with: packet)
+        return wrapped
+    }
+
     // MARK: - RTP/RTCP Packet Sending
-    func sendPacket(packet: Data, length cBytes: Int) {
+    func sendPacket(packet: Data, length: Int) {
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
 
-        if let RTP {
-            CFSocketSendData(RTP.socket, RTP.address, packet as CFData, 0)
+        guard let sessionConnection else { return }
+
+        switch sessionConnection {
+        case .udp(let udpSession):
+            CFSocketSendData(udpSession.socketRTP, udpSession.addressRTP, packet as CFData, 0)
+        case .interleaved(let interleavedSession):
+            CFSocketSendData(
+                socket,
+                address,
+                Self.interleavePacket(
+                    packet,
+                    channel: interleavedSession.channelRTP,
+                    length: UInt16(length)
+                ) as CFData,
+                0
+            )
         }
+
         packets += 1
-        bytesSent += cBytes
+        bytesSent += length
 
         let now = Date()
         if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
@@ -488,15 +602,20 @@ class RTSPClientConnection {
             buf += tonetLong(UInt32(rtpBase))
             buf += tonetLong(UInt32(packets - packetsReported))
             buf += tonetLong(UInt32(bytesSent - bytesReported))
-            // tonet_short(buf+2, 6);  // length (count of uint32_t minus 1)
-            // tonet_long(buf+4, _ssrc);
-            // tonet_long(buf+8, (_ntpBase >> 32));
-            // tonet_long(buf+12, _ntpBase);
-            // tonet_long(buf+16, _rtpBase);
-            // tonet_long(buf+20, (_packets - _packetsReported));
-            // tonet_long(buf+24, (_bytesSent - _bytesReported));
-            if let RTCP {
-                CFSocketSendData(RTCP.socket, RTCP.address, buf as CFData, 0)
+
+            switch sessionConnection {
+            case .udp(let udpSession):
+                CFSocketSendData(udpSession.socketRTCP, udpSession.addressRTCP, buf as CFData, 0)
+            case .interleaved(let interleavedSession):
+                CFSocketSendData(
+                    socket,
+                    address,
+                    Self.interleavePacket(
+                        buf,
+                        channel: interleavedSession.channelRTCP
+                    ) as CFData,
+                    0
+                )
             }
 
             sentRTCP = now
@@ -514,15 +633,8 @@ class RTSPClientConnection {
 
     // MARK: - Teardown
     func tearDown() {
-        // Clean up sockets and state
-        if let RTP {
-            CFSocketInvalidate(RTP.socket)
-            self.RTP = nil
-        }
-        if let RTCP {
-            CFSocketInvalidate(RTCP.socket)
-            self.RTCP = nil
-        }
+        sessionConnection?.tearDown()
+        sessionConnection = nil
         if let recvRTCP {
             CFSocketInvalidate(recvRTCP)
             self.recvRTCP = nil
@@ -533,7 +645,7 @@ class RTSPClientConnection {
     // MARK: - Shutdown
     func shutdown() {
         tearDown()
-        if let socket = socket {
+        if let socket {
             CFSocketInvalidate(socket)
             self.socket = nil
         }
