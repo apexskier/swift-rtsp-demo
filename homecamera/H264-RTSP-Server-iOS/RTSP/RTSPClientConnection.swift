@@ -2,16 +2,6 @@ import CoreFoundation
 import Foundation
 import Network
 
-// MARK: - Utility Functions
-private func tonetLong(_ l: UInt32) -> [UInt8] {
-    [
-        UInt8((l >> 24) & 0xff),
-        UInt8((l >> 16) & 0xff),
-        UInt8((l >> 8) & 0xff),
-        UInt8(l & 0xff),
-    ]
-}
-
 private let base64Mapping = Array(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8
 )
@@ -530,13 +520,11 @@ class RTSPClientConnection {
                 0,  // empty
                 6,  // length (count of uint32_t minus 1)
             ]
-            buf += tonetLong(ssrc)
-            withUnsafeBytes(of: UInt64(ntpBase).bigEndian) { ptr in
-                buf += ptr
-            }
-            buf += tonetLong(UInt32(rtpBase))
-            buf += tonetLong(UInt32(packets - packetsReported))
-            buf += tonetLong(UInt32(bytesSent - bytesReported))
+            buf.append(value: ssrc.bigEndian)
+            buf.append(value: UInt64(ntpBase).bigEndian)
+            buf.append(value: UInt32(rtpBase).bigEndian)
+            buf.append(value: UInt32(packets - packetsReported).bigEndian)
+            buf.append(value: UInt32(bytesSent - bytesReported).bigEndian)
 
             switch sessionConnection {
             case .udp(let udpSession):
