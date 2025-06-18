@@ -92,7 +92,7 @@ class RTSPClientConnection {
     private var sentRTCP: Date?
     private var recvRTCP: CFSocket?
     private var rlsRTCP: CFRunLoopSource?
-    private let clock = 90000 // RTP clock rate for H264
+    private let clock = 90000  // RTP clock rate for H264
 
     // MARK: - Initializer
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
@@ -305,14 +305,9 @@ class RTSPClientConnection {
             fatalError("No peer address for socket")
         }
         var paddr = (data as Data).withUnsafeBytes { $0.load(as: sockaddr_in.self) }
+
         paddr.sin_port = in_port_t(UInt16(portRTP).bigEndian)
-        guard
-            let addrRTP = CFDataCreate(
-                nil,
-                UnsafeRawPointer(&paddr).assumingMemoryBound(to: UInt8.self),
-                MemoryLayout<sockaddr_in>.size
-            )
-        else {
+        guard let addrRTP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
             fatalError("Failed to create RTP address")
         }
         guard let socketRTP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
@@ -322,13 +317,7 @@ class RTSPClientConnection {
         RTP = (addrRTP, socketRTP)
 
         paddr.sin_port = in_port_t(UInt16(portRTCP).bigEndian)
-        guard
-            let addrRTCP = CFDataCreate(
-                nil,
-                UnsafeRawPointer(&paddr).assumingMemoryBound(to: UInt8.self),
-                MemoryLayout<sockaddr_in>.size
-            )
-        else {
+        guard let addrRTCP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
             fatalError("Failed to create RTCP address")
         }
         guard let socketRTCP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
@@ -428,7 +417,10 @@ class RTSPClientConnection {
                         fuHeader |= 0x40
                     }
                     packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
-                    packet[packet.startIndex + rtpHeaderSize + 2..<(packet.startIndex + rtpHeaderSize + 2 + cThis)] =
+                    packet[
+                        packet.startIndex + rtpHeaderSize
+                            + 2..<(packet.startIndex + rtpHeaderSize + 2 + cThis)
+                    ] =
                         nalu[pointerNalu..<(pointerNalu + cThis)]
                     sendPacket(packet: packet, length: cThis + rtpHeaderSize + 2)
 
@@ -513,7 +505,7 @@ class RTSPClientConnection {
     func onRTCP(_ data: CFData) {
         // RTCP receive handler (not implemented)
         print("RTCP packet received")
-        let packet = RTCPMessage(data: data as Data, clock: clock)
+        _ = RTCPMessage(data: data as Data, clock: clock)
     }
 
     // MARK: - Teardown
