@@ -114,7 +114,7 @@ class AVEncoder {
             }
         }
         objc_sync_exit(self)
-        let prestime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let prestime = sampleBuffer.presentationTimeStamp
         let dPTS = Double(prestime.value) / Double(prestime.timescale)
         objc_sync_enter(times)
         times.append(dPTS)

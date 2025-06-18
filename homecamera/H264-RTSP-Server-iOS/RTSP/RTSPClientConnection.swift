@@ -93,6 +93,7 @@ class RTSPClientConnection {
     private var recvRTCP: CFSocket?
     private var rlsRTCP: CFRunLoopSource?
     private let clock = 90000  // RTP clock rate for H264
+    private let serverPort: UInt16 = 6971
 
     // MARK: - Initializer
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
@@ -109,7 +110,6 @@ class RTSPClientConnection {
             socketHandle,
             CFSocketCallBackType.dataCallBack.rawValue,
             { (s, callbackType, address, data, info) in
-                print("data callback")
                 guard let info else { return }
                 let conn = Unmanaged<RTSPClientConnection>.fromOpaque(info).takeUnretainedValue()
                 switch callbackType {
@@ -188,7 +188,9 @@ class RTSPClientConnection {
                         break
                     }
                 }
-                if let ports = ports, ports.count == 2, let portRTP = Int(ports[0]),
+
+                if let ports, ports.count == 2,
+                    let portRTP = Int(ports[0]),
                     let portRTCP = Int(ports[1])
                 {
                     createSession(portRTP: portRTP, portRTCP: portRTCP)
@@ -353,7 +355,7 @@ class RTSPClientConnection {
         var addr = sockaddr_in()
         addr.sin_addr.s_addr = INADDR_ANY
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(UInt16(6971).bigEndian)  // htons
+        addr.sin_port = in_port_t(serverPort.bigEndian)  // htons
         let dataAddr = Data(bytes: &addr, count: MemoryLayout<sockaddr_in>.size) as CFData
         CFSocketSetAddress(self.recvRTCP, dataAddr)
 
@@ -372,6 +374,8 @@ class RTSPClientConnection {
         self.sentRTCP = nil
         self.packetsReported = 0
         self.bytesReported = 0
+
+        print("Started session \(sessionid) with RTP port \(portRTP) and RTCP port \(portRTCP)")
     }
 
     // MARK: - Video Data

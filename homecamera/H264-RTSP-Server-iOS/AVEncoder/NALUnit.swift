@@ -319,31 +319,39 @@ private struct SliceHeader {
 // MARK: - avcCHeader
 
 public struct AVCCHeader {
-    private(set) var lengthSize: Int
-    private(set) var sps: NALUnit = NALUnit()
-    private(set) var pps: NALUnit = NALUnit()
+    let lengthSize: Int
+    let sps: NALUnit
+    let pps: NALUnit
 
     public init?(header data: Data) {
         guard data.count >= 8 else { return nil }
         lengthSize = Int(data[4] & 3) + 1
         let cSeq = Int(data[5] & 0x1f)
         var p = 6
+        var sps: NALUnit?
         for i in 0..<cSeq {
-            if p + 2 > data.count { return }
+            if p + 2 > data.count { return nil }
             let cThis = Int(data[p] << 8 | data[p + 1])
             p += 2
-            if p + cThis > data.count { return }
+            if p + cThis > data.count { return nil }
             if i == 0 {
                 sps = NALUnit(data: data, offset: p, length: cThis)
             }
             p = p.advanced(by: cThis)
         }
-        if p + 3 >= data.count { return }
+        if p + 3 >= data.count { return nil }
         let cPPS = data[p]
         if cPPS > 0 {
             let cThis = Int(data[p + 1] << 8 | data[p + 2])
             p += 3
             pps = NALUnit(data: data, offset: p, length: cThis)
+        } else {
+            return nil
+        }
+        if let sps {
+            self.sps = sps
+        } else {
+            return nil
         }
     }
 }

@@ -50,12 +50,14 @@ struct RTCPMessage {
     init?(data: Data, clock: Int) {
         var ptr = data.startIndex
         guard data[ptr] & 0b11000000 == 0b10000000 else {  // version should be 2
+            print("RTCP packet version is not 2")
             return
         }
         let padding = data[ptr] & 0b00100000 != 0
         let receptionReportCount = data[ptr] & 0b00011111
         guard let packetType = PacketType(rawValue: data[1]) else {
-            return nil
+            print("Unsupported RTCP packet type: \(data[1])")
+            return
         }
         let length = data.withUnsafeBytes { bytes in
             bytes.load(fromByteOffset: ptr + 2, as: UInt16.self)

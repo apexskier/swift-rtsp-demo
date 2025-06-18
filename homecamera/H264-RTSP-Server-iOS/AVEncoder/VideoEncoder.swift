@@ -33,7 +33,7 @@ class VideoEncoder {
     func encodeFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
         guard CMSampleBufferDataIsReady(sampleBuffer) else { return false }
         if writer.status == .unknown {
-            let startTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            let startTime = sampleBuffer.presentationTimeStamp
             writer.startWriting()
             writer.startSession(atSourceTime: startTime)
         }

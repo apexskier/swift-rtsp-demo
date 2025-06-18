@@ -17,7 +17,7 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
     // MARK: - Properties
 
-    var session: AVCaptureSession?
+    var session: AVCaptureSession? = nil
     let deviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
             .builtInWideAngleCamera,
@@ -53,26 +53,13 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             session.addInput(input)
         }
     }
-    private var output: AVCaptureVideoDataOutput?
-    private var captureQueue: DispatchQueue?
-    private var encoder: AVEncoder?
-    private var rtsp: RTSPServer?
+    private var output: AVCaptureVideoDataOutput? = nil
+    private var captureQueue: DispatchQueue? = nil
+    private var encoder: AVEncoder? = nil
+    private var rtsp: RTSPServer? = nil
+    private var firstCaptureTimestamp: Date? = nil
 
-    init(
-        session: AVCaptureSession? = nil,
-        output: AVCaptureVideoDataOutput? = nil,
-        captureQueue: DispatchQueue? = nil,
-        encoder: AVEncoder? = nil,
-        rtsp: RTSPServer? = nil
-    ) {
-        self.session = session
-        self.output = output
-        self.captureQueue = captureQueue
-        self.encoder = encoder
-        self.rtsp = rtsp
-
-        // TODO: observe device discovery changes using KV
-    }
+    // TODO: observe device discovery changes using KV
 
     // MARK: - Startup
 
@@ -95,7 +82,7 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         output.setSampleBufferDelegate(self, queue: captureQueue)
         output.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String:
-                kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                kCVPixelFormatType_32BGRA
         ]
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
@@ -129,6 +116,67 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        if firstCaptureTimestamp == nil {
+            firstCaptureTimestamp = .init(timeIntervalSinceNow: -CACurrentMediaTime())
+        }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+            return
+        }
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+
+        // For kCVPixelFormatType_32BGRA
+        let bitmapInfo = CGBitmapInfo(
+            rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
+                | CGBitmapInfo.byteOrder32Little.rawValue
+        )
+
+        guard
+            let context = CGContext(
+                data: baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo.rawValue
+            )
+        else {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+            return
+        }
+
+        UIGraphicsPushContext(context)
+        let font = UIFont.systemFont(ofSize: 36)
+        let timestamp = sampleBuffer.presentationTimeStamp
+        let d = Date(timeInterval: timestamp.seconds, since: firstCaptureTimestamp!)
+        let string = NSAttributedString(
+            string: d.formatted(date: .abbreviated, time: .standard),
+            attributes: [
+                NSAttributedString.Key.font: font,
+                NSAttributedString.Key.foregroundColor: UIColor.white,
+                NSAttributedString.Key.backgroundColor: UIColor.black,
+            ]
+        )
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+
+        string.draw(at: CGPoint(x: 20, y: 20))
+
+        context.restoreGState()
+        UIGraphicsPopContext()
+
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+
         encoder?.encode(frame: sampleBuffer)
     }
 
