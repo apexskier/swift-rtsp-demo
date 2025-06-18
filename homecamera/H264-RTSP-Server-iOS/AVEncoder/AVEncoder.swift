@@ -373,10 +373,7 @@ class AVEncoder {
         var poc = 0
         if let pendingNALU {
             for d in pendingNALU {
-                let nal = d.withUnsafeBytes { pointer in
-                    let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                    return NALUnit(start: bytes, length: d.count)
-                }
+                let nal = NALUnit(data: d)
                 if let value = pocState.getPOC(nal: nal) {
                     poc = value
                     break
@@ -414,10 +411,7 @@ class AVEncoder {
         let idc = Int(nalu[0] & 0x60)
         let naltype = Int(nalu[0] & 0x1f)
         if pendingNALU != nil {
-            let nal = nalu.withUnsafeBytes { pointer in
-                let bytes = pointer.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                return NALUnit(start: bytes, length: nalu.count)
-            }
+            let nal = NALUnit(data: nalu)
             // we have existing data —is this the same frame?
             // typically there are a couple of NALUs per frame in iOS encoding.
             // This is not general-purpose: it assumes that arbitrary slice ordering is not allowed.
