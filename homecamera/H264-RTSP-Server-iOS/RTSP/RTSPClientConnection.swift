@@ -76,8 +76,8 @@ class RTSPClientConnection {
     private var socket: CFSocket?
     private weak var server: RTSPServer?
     private var rls: CFRunLoopSource?
-    private var RTP: (CFData, CFSocket)?
-    private var RTCP: (CFData, CFSocket)?
+    private var RTP: (address: CFData, socket: CFSocket)?
+    private var RTCP: (address: CFData, socket: CFSocket)?
     private var session: String?
     private var state: ServerState = .idle
     private var packets: Int = 0  // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
@@ -463,7 +463,7 @@ class RTSPClientConnection {
         defer { objc_sync_exit(self) }
 
         if let RTP {
-            CFSocketSendData(RTP.1, RTP.0, packet as CFData, 0)
+            CFSocketSendData(RTP.socket, RTP.address, packet as CFData, 0)
         }
         packets += 1
         bytesSent += cBytes
@@ -492,7 +492,7 @@ class RTSPClientConnection {
             // tonet_long(buf+20, (_packets - _packetsReported));
             // tonet_long(buf+24, (_bytesSent - _bytesReported));
             if let RTCP {
-                CFSocketSendData(RTCP.1, RTCP.0, buf as CFData, 0)
+                CFSocketSendData(RTCP.socket, RTCP.address, buf as CFData, 0)
             }
 
             sentRTCP = now
@@ -512,11 +512,11 @@ class RTSPClientConnection {
     func tearDown() {
         // Clean up sockets and state
         if let RTP {
-            CFSocketInvalidate(RTP.1)
+            CFSocketInvalidate(RTP.socket)
             self.RTP = nil
         }
         if let RTCP {
-            CFSocketInvalidate(RTCP.1)
+            CFSocketInvalidate(RTCP.socket)
             self.RTCP = nil
         }
         if let recvRTCP {
