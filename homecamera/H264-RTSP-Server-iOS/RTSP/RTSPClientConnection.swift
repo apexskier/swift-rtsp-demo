@@ -411,10 +411,16 @@ class RTSPClientConnection {
                 print("Playback starting at first IDR")
             }
             if countBytes < maxSinglePacket {
-                var packet = Data(repeating: 0, count: maxPacketSize)
+                var packet = Data(count: maxPacketSize)
+
                 writeHeader(&packet, marker: bLast, time: pts)
                 packet.replaceSubrange(packet.startIndex.advanced(by: rtpHeaderSize)..., with: nalu)
-                sendPacket(packet: packet, length: countBytes + rtpHeaderSize)
+                sendPacket(
+                    packet.subdata(
+                        in: packet
+                            .startIndex..<packet.startIndex.advanced(by: countBytes + rtpHeaderSize)
+                    )
+                )
             } else {
                 var pointerNalu = nalu.startIndex
                 let naluHeader = nalu[pointerNalu]
@@ -423,9 +429,10 @@ class RTSPClientConnection {
                 var bStart = true
 
                 while countBytes > 0 {
-                    var packet = Data(repeating: 0, count: maxPacketSize)
-                    let cThis = min(countBytes, maxFragmentPacket)
-                    let bEnd = cThis == countBytes
+                    var packet = Data(count: maxPacketSize)
+
+                    let countThis = min(countBytes, maxFragmentPacket)
+                    let bEnd = countThis == countBytes
                     writeHeader(&packet, marker: bLast && bEnd, time: pts)
 
                     packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
@@ -439,13 +446,20 @@ class RTSPClientConnection {
                     packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
                     packet[
                         packet.startIndex + rtpHeaderSize
-                            + 2..<(packet.startIndex + rtpHeaderSize + 2 + cThis)
+                            + 2..<(packet.startIndex + rtpHeaderSize + 2 + countThis)
                     ] =
-                        nalu[pointerNalu..<(pointerNalu + cThis)]
-                    sendPacket(packet: packet, length: cThis + rtpHeaderSize + 2)
+                        nalu[pointerNalu..<(pointerNalu + countThis)]
+                    sendPacket(
+                        packet.subdata(
+                            in: packet
+                                .startIndex..<packet.startIndex.advanced(
+                                    by: countThis + rtpHeaderSize + 2
+                                )
+                        )
+                    )
 
-                    pointerNalu += cThis
-                    countBytes -= cThis
+                    pointerNalu += countThis
+                    countBytes -= countThis
                 }
             }
         }
@@ -475,18 +489,20 @@ class RTSPClientConnection {
     // interleaved RFC 2326 10.12
     private static func interleavePacket(
         _ packet: Data,
-        channel: UInt8,
-        length: UInt16? = nil
+        channel: UInt8
     ) -> Data {
         var wrapped = Data(count: packet.count + 4)
         wrapped[wrapped.startIndex] = 0x24  // '$'
         wrapped[wrapped.startIndex.advanced(by: 1)] = channel
-        wrapped.replace(at: wrapped.startIndex.advanced(by: 2), with: (length ?? UInt16(packet.count)).bigEndian)
+        wrapped.replace(
+            at: wrapped.startIndex.advanced(by: 2),
+            with: UInt16(packet.count).bigEndian
+        )
         wrapped.replaceSubrange(wrapped.startIndex.advanced(by: 4)..., with: packet)
         return wrapped
     }
 
-    private func sendPacket(packet: Data, length: Int) {
+    private func sendPacket(_ packet: Data) {
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
 
@@ -501,15 +517,14 @@ class RTSPClientConnection {
                 address,
                 Self.interleavePacket(
                     packet,
-                    channel: interleavedSession.channelRTP,
-                    length: UInt16(length)
+                    channel: interleavedSession.channelRTP
                 ) as CFData,
                 0
             )
         }
 
         packets += 1
-        bytesSent += length
+        bytesSent += packet.count
 
         let now = Date()
         if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
