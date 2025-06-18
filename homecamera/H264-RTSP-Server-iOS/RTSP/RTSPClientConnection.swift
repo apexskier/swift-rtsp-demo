@@ -3,13 +3,6 @@ import Foundation
 import Network
 
 // MARK: - Utility Functions
-private func tonetShort(_ s: UInt16) -> [UInt8] {
-    [
-        UInt8((s >> 8) & 0xff),
-        UInt8(s & 0xff),
-    ]
-}
-
 private func tonetLong(_ l: UInt32) -> [UInt8] {
     [
         UInt8((l >> 24) & 0xff),
@@ -472,9 +465,7 @@ class RTSPClientConnection {
         packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
 
-        let seq = UInt16(packets & 0xffff)
-        let seqBytes = tonetShort(seq)
-        packet.replaceSubrange(2..<4, with: seqBytes)
+        packet.replaceSubrange(2..<4, with: UInt16(packets & 0xffff).bigEndian)
 
         while rtpBase == 0 {
             rtpBase = UInt64(UInt32.random(in: UInt32.min...UInt32.max))
@@ -486,11 +477,9 @@ class RTSPClientConnection {
             ntpBase = UInt64(interval * Double(1 << 32))
         }
         let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
-        let rtpBytes = tonetLong(UInt32(truncatingIfNeeded: rtp))
-        packet.replaceSubrange(4..<8, with: rtpBytes)
+        packet.replaceSubrange(4..<8, with: UInt32(rtp).bigEndian)
 
-        let ssrcBytes = tonetLong(ssrc)
-        packet.replaceSubrange(8..<12, with: ssrcBytes)
+        packet.replaceSubrange(8..<12, with: ssrc.bigEndian)
     }
 
     private static func interleavePacket(
@@ -502,7 +491,7 @@ class RTSPClientConnection {
         var wrapped = Data(count: packet.count + 4)
         wrapped[0] = 0x24  // '$'
         wrapped[1] = channel
-        wrapped.replaceSubrange(2..<4, with: tonetShort(length ?? UInt16(packet.count)))
+        wrapped.replaceSubrange(2..<4, with: (length ?? UInt16(packet.count)).bigEndian)
         wrapped.replaceSubrange(4..., with: packet)
         return wrapped
     }
