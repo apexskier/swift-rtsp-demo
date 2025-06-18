@@ -24,50 +24,6 @@ private let base64Mapping = Array(
 )
 private let maxPacketSize = 1200
 
-private func encodeLong(_ val: UInt32, nPad: Int) -> String {
-    var ch = [UInt8](repeating: 0, count: 4)
-    let cch = 4 - nPad
-    for i in 0..<cch {
-        let shift = 6 * (cch - (i + 1))
-        let bits = (val >> shift) & 0x3f
-        ch[i] = base64Mapping[Int(bits)]
-    }
-    for i in 0..<nPad {
-        ch[cch + i] = UInt8(Character("=").asciiValue!)
-    }
-    return String(bytes: ch, encoding: .utf8) ?? ""
-}
-
-private func encodeToBase64(_ data: Data) -> String {
-    var s = ""
-    var idx = 0
-    let bytes = [UInt8](data)
-    var cBytes = data.count
-    while cBytes >= 3 {
-        let val =
-            (UInt32(bytes[idx]) << 16) + (UInt32(bytes[idx + 1]) << 8) + UInt32(bytes[idx + 2])
-        s += encodeLong(val, nPad: 0)
-        idx += 3
-        cBytes -= 3
-    }
-    if cBytes > 0 {
-        var nPad: Int
-        var val: UInt32
-        if cBytes == 1 {
-            // pad 8 bits to 2 x 6 and add 2 ==
-            nPad = 2
-            val = UInt32(bytes[idx]) << 4
-        } else {
-            // must be two bytes -- pad 16 bits to 3 x 6 and add one =
-            nPad = 1
-            val = (UInt32(bytes[idx]) << 8) + UInt32(bytes[idx + 1])
-            val = val << 2
-        }
-        s += encodeLong(val, nPad: nPad)
-    }
-    return s
-}
-
 private enum ServerState {
     case idle, setup, playing
 }
