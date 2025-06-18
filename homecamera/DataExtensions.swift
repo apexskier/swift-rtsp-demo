@@ -8,9 +8,9 @@
 import Foundation
 
 extension Data {
-    mutating func replaceSubrange<T>(_ range: Range<Data.Index>, with value: T) {
+    mutating func replace<T>(at: Data.Index, with value: T) {
         Swift.withUnsafeBytes(of: value) {
-            self.replaceSubrange(range, with: $0)
+            self.replaceSubrange(at..<at.advanced(by: MemoryLayout<T>.stride), with: $0)
         }
     }
 

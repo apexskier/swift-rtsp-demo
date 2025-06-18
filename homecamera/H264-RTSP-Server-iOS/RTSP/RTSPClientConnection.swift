@@ -6,6 +6,7 @@ private let base64Mapping = Array(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8
 )
 private let maxPacketSize = 1200
+private let rtpHeaderSize = 12
 
 private enum ServerState {
     case idle, setup, playing
@@ -397,7 +398,6 @@ class RTSPClientConnection {
     // MARK: - Video Data
     func onVideoData(_ data: [Data], time pts: Double) {
         guard state == .playing else { return }
-        let rtpHeaderSize = 12
         let maxSinglePacket = maxPacketSize - rtpHeaderSize
         let maxFragmentPacket = maxSinglePacket - 2
         for (i, nalu) in data.enumerated() {
@@ -413,7 +413,7 @@ class RTSPClientConnection {
             if countBytes < maxSinglePacket {
                 var packet = Data(repeating: 0, count: maxPacketSize)
                 writeHeader(&packet, marker: bLast, time: pts)
-                packet.replaceSubrange(rtpHeaderSize..., with: nalu)
+                packet.replaceSubrange(packet.startIndex.advanced(by: rtpHeaderSize)..., with: nalu)
                 sendPacket(packet: packet, length: countBytes + rtpHeaderSize)
             } else {
                 var pointerNalu = nalu.startIndex
@@ -455,7 +455,7 @@ class RTSPClientConnection {
         packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
 
-        packet.replaceSubrange(2..<4, with: UInt16(packets & 0xffff).bigEndian)
+        packet.replace(at: 2, with: UInt16(truncatingIfNeeded: packets).bigEndian)
 
         while rtpBase == 0 {
             rtpBase = UInt64(UInt32.random(in: UInt32.min...UInt32.max))
@@ -467,22 +467,22 @@ class RTSPClientConnection {
             ntpBase = UInt64(interval * Double(1 << 32))
         }
         let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
-        packet.replaceSubrange(4..<8, with: UInt32(rtp).bigEndian)
+        packet.replace(at: packet.startIndex.advanced(by: 4), with: UInt32(rtp).bigEndian)
 
-        packet.replaceSubrange(8..<12, with: ssrc.bigEndian)
+        packet.replace(at: packet.startIndex.advanced(by: 8), with: ssrc.bigEndian)
     }
 
+    // interleaved RFC 2326 10.12
     private static func interleavePacket(
         _ packet: Data,
         channel: UInt8,
         length: UInt16? = nil
     ) -> Data {
-        // interleaved RFC 2326 10.12
         var wrapped = Data(count: packet.count + 4)
-        wrapped[0] = 0x24  // '$'
-        wrapped[1] = channel
-        wrapped.replaceSubrange(2..<4, with: (length ?? UInt16(packet.count)).bigEndian)
-        wrapped.replaceSubrange(4..., with: packet)
+        wrapped[wrapped.startIndex] = 0x24  // '$'
+        wrapped[wrapped.startIndex.advanced(by: 1)] = channel
+        wrapped.replace(at: wrapped.startIndex.advanced(by: 2), with: (length ?? UInt16(packet.count)).bigEndian)
+        wrapped.replaceSubrange(wrapped.startIndex.advanced(by: 4)..., with: packet)
         return wrapped
     }
 
