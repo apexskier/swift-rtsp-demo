@@ -2,8 +2,8 @@ import AVFoundation
 import Foundation
 
 // Typealiases for handler blocks
-public typealias EncoderHandler = (_ data: [Data], _ pts: Double) -> Void
-public typealias ParamHandler = (_ params: Data) -> Void
+typealias EncoderHandler = (_ data: [Data], _ pts: Double) -> Void
+typealias ParamHandler = (_ params: Data) -> Void
 
 // store the calculated POC with a frame ready for timestamp assessment
 // (recalculating POC out of order will get an incorrect result)
@@ -72,8 +72,6 @@ class AVEncoder {
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
     private let maxFilenameIndex = 5  // filenames "capture1.mp4" wraps at capture5.mp4
-
-    // MARK: - Public API
 
     init(height: Int, width: Int) {
         self.height = height

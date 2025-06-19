@@ -204,9 +204,9 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     }
 }
 
-public struct CameraPreview: UIViewRepresentable {
-    public class VideoPreviewView: UIView {
-        public override class var layerClass: AnyClass {
+struct CameraPreview: UIViewRepresentable {
+    class VideoPreviewView: UIView {
+        override class var layerClass: AnyClass {
             AVCaptureVideoPreviewLayer.self
         }
 
@@ -224,12 +224,10 @@ public struct CameraPreview: UIViewRepresentable {
         return view
     }()
 
-    public func makeUIView(context: Context) -> VideoPreviewView {
+    func makeUIView(context: Context) -> VideoPreviewView {
         self.view.videoPreviewLayer?.session = self.session
         return self.view
     }
 
-    public func updateUIView(_ uiView: VideoPreviewView, context: Context) {
-        print("update ui view")
-    }
+    func updateUIView(_ uiView: VideoPreviewView, context: Context) {}
 }

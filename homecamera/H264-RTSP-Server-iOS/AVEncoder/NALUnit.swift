@@ -11,8 +11,8 @@ import Foundation
 
 // MARK: - NALUnit
 
-public final class NALUnit {
-    public enum NALType: UInt8 {
+final class NALUnit {
+    enum NALType: UInt8 {
         case slice = 1
         case partitionA = 2
         case partitionB = 3
@@ -47,13 +47,13 @@ public final class NALUnit {
         NALType(byte: data[data.startIndex])
     }
 
-    public func resetBitstream() {
+    func resetBitstream() {
         self.idx = data.startIndex
         self.nBits = 0
         self.cZeros = 0
     }
 
-    public func skip(_ nBits: Int) {
+    func skip(_ nBits: Int) {
         var nBits = nBits
         if nBits < self.nBits {
             self.nBits -= nBits
@@ -72,7 +72,7 @@ public final class NALUnit {
     }
 
     // get the next byte, removing emulation prevention bytes
-    public func getBYTE() -> UInt8 {
+    func getBYTE() -> UInt8 {
         guard idx < data.count else { return 0 }
         let b = data[idx]
         idx += 1
@@ -89,7 +89,7 @@ public final class NALUnit {
         return b
     }
 
-    public func getBit() -> UInt {
+    func getBit() -> UInt {
         if nBits == 0 {
             byte = getBYTE()
             nBits = 8
@@ -98,7 +98,7 @@ public final class NALUnit {
         return UInt((byte >> nBits) & 0x1)
     }
 
-    public func getWord(_ nBits: Int) -> UInt {
+    func getWord(_ nBits: Int) -> UInt {
         var u: UInt = 0
         var nBits = nBits
         while nBits > 0 {
@@ -109,7 +109,7 @@ public final class NALUnit {
         return u
     }
 
-    public func getUE() -> UInt {
+    func getUE() -> UInt {
         // Exp-Golomb entropy coding: leading zeros, then a one, then the data bits.
         var cZeros = 0
         while getBit() == 0 {
@@ -119,7 +119,7 @@ public final class NALUnit {
         return getWord(cZeros) + ((1 << cZeros) - 1)
     }
 
-    public func getSE() -> Int {
+    func getSE() -> Int {
         // same as UE but signed.
         let ue = getUE()
         let bPositive = (ue & 1) != 0
@@ -128,18 +128,18 @@ public final class NALUnit {
         return se
     }
 
-    public func noMoreBits() -> Bool {
+    func noMoreBits() -> Bool {
         idx >= data.count && nBits == 0
     }
 
-    public func isRefPic() -> Bool {
+    func isRefPic() -> Bool {
         (data[data.startIndex] & 0x60) != 0
     }
 }
 
 // MARK: - SeqParamSet
 
-public struct SeqParamSet {
+struct SeqParamSet {
     let frameBits: Int
     let cx: Int
     let cy: Int
@@ -150,7 +150,7 @@ public struct SeqParamSet {
     let pocType: Int
     let pocLSBBits: Int
 
-    public init?(_ nalu: NALUnit) {
+    init?(_ nalu: NALUnit) {
         guard nalu.type() == .sequenceParams else { return nil }
 
         // with the UE/SE type encoding, we must decode all the values
@@ -260,7 +260,7 @@ private struct SliceHeader {
     let pocDelta: Int
     let pocLSB: Int
 
-    public init?(_ nalu: NALUnit, sps: SeqParamSet, deltaPresent: Bool) {
+    init?(_ nalu: NALUnit, sps: SeqParamSet, deltaPresent: Bool) {
         switch nalu.type() {
         case .idrSlice, .slice, .partitionA:
             // all these begin with a slice header
@@ -307,12 +307,12 @@ private struct SliceHeader {
 
 // MARK: - avcCHeader
 
-public struct AVCCHeader {
+struct AVCCHeader {
     let lengthSize: Int
     let sps: NALUnit
     let pps: NALUnit
 
-    public init?(header data: Data) {
+    init?(header data: Data) {
         guard data.count >= 8 else { return nil }
         lengthSize = Int(data[4] & 3) + 1
         let cSeq = Int(data[5] & 0x1f)
@@ -347,7 +347,7 @@ public struct AVCCHeader {
 
 // MARK: - POCState
 
-public final class POCState {
+final class POCState {
     private var prevLSB: Int = 0
     private var prevMSB: Int = 0
     private var sps: SeqParamSet?
@@ -355,7 +355,7 @@ public final class POCState {
     private(set) var frameNum: Int = 0
     private(set) var lastlsb: Int = 0
 
-    public func setHeader(_ avc: AVCCHeader) {
+    func setHeader(_ avc: AVCCHeader) {
         self.sps = SeqParamSet(avc.sps)
         let pps = avc.pps
         pps.resetBitstream()
@@ -365,7 +365,7 @@ public final class POCState {
         deltaPresent = pps.getBit() != 0
     }
 
-    public func getPOC(nal: NALUnit) -> Int? {
+    func getPOC(nal: NALUnit) -> Int? {
         guard let sps, let slice = SliceHeader(nal, sps: sps, deltaPresent: deltaPresent) else {
             return nil
         }
