@@ -13,55 +13,67 @@ struct ContentView: View {
     private var cameraServer: CameraServer = .shared
 
     var body: some View {
-        VStack {
-            if let url = cameraServer.getURL() {
-                HStack {
-                    Text(url)
-                    Button {
-                        UIPasteboard.general.setValue(url, forPasteboardType: UTType.url.identifier)
-                    } label: {
-                        Label("Copy URL", systemImage: "doc.on.clipboard")
-                    }
+        NavigationStack {
+            VStack {
+                if let session = cameraServer.session {
+                    CameraPreview(session: session)
+                        .ignoresSafeArea()
+                } else {
+                    ProgressView("Starting camera…")
                 }
             }
-
-            Picker(
-                selection: .init(
-                    get: {
-                        cameraServer.device?.uniqueID
-                    },
-                    set: { newValue in
-                        if let newValue {
-                            cameraServer.device = AVCaptureDevice(uniqueID: newValue)
-                        } else {
-                            cameraServer.device = nil
+            .toolbar {
+                ToolbarItem {
+                    if let urlString = cameraServer.getURL(),
+                        let url = URL(string: urlString)
+                    {
+                        ShareLink(item: url, preview: SharePreview("RTSP Server URL")) {
+                            Label("Copy URL", systemImage: "network")
                         }
+                    } else {
+                        Button {
+                        } label: {
+                            Label("Copy URL", systemImage: "network.slash")
+                        }
+                        .disabled(true)
                     }
-                )
-            ) {
-                Text("Select Camera").tag(nil as String?)
-                    .selectionDisabled()
-                ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) { device in
-                    Text(device.localizedName).tag(device.uniqueID)
-                        .selectionDisabled(!device.isConnected)
                 }
-            } label: {
-                Label("Camera", systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill")
-            }
-
-            if let session = cameraServer.session {
-                CameraPreview(session: session)
-                    .edgesIgnoringSafeArea(.all)
-            } else {
-                ProgressView("Starting camera...")
+                ToolbarItem {
+                    Picker(
+                        selection: .init(
+                            get: {
+                                cameraServer.device?.uniqueID
+                            },
+                            set: { newValue in
+                                if let newValue {
+                                    cameraServer.device = AVCaptureDevice(uniqueID: newValue)
+                                } else {
+                                    cameraServer.device = nil
+                                }
+                            }
+                        )
+                    ) {
+                        Text("Select Camera").tag(nil as String?)
+                            .selectionDisabled()
+                        ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) { device in
+                            Text(device.localizedName).tag(device.uniqueID)
+                                .selectionDisabled(!device.isConnected)
+                        }
+                    } label: {
+                        Label(
+                            "Camera",
+                            systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill"
+                        )
+                    }
+                }
             }
         }
         .task {
             Task(priority: .background) {
                 cameraServer.startup()
+                UIApplication.shared.isIdleTimerDisabled = true
             }
         }
-        .padding()
     }
 }
 
