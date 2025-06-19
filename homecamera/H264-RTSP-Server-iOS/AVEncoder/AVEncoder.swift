@@ -12,6 +12,7 @@ private struct EncodedFrame {
     let frame: [Data]
 }
 
+// TODO: Remove
 func to_host(_ x: Data) -> UInt32 {
     x.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
 }

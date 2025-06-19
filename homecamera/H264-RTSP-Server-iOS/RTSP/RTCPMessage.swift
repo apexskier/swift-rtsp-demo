@@ -47,24 +47,24 @@ extension PacketType: CustomDebugStringConvertible {
 }
 
 struct RTCPMessage {
+    let type: PacketType
+    let ssrc: UInt32
+
     init?(data: Data, clock: Int) {
         var ptr = data.startIndex
         guard data[ptr] & 0b11000000 == 0b10000000 else {  // version should be 2
             print("RTCP packet version is not 2")
-            return
+            return nil
         }
         let padding = data[ptr] & 0b00100000 != 0
         let receptionReportCount = data[ptr] & 0b00011111
         guard let packetType = PacketType(rawValue: data[1]) else {
             print("Unsupported RTCP packet type: \(data[1])")
-            return
+            return nil
         }
-        let length = data.withUnsafeBytes { bytes in
-            bytes.load(fromByteOffset: ptr + 2, as: UInt16.self)
-        }
-        let ssrc = data.withUnsafeBytes { bytes in
-            bytes.load(fromByteOffset: ptr + 4, as: UInt32.self)
-        }
+        self.type = packetType
+        let length = data.read(at: ptr + 2, as: UInt16.self).bigEndian
+        ssrc = data.read(at: ptr + 4, as: UInt32.self).bigEndian
 
         ptr += 4
 
@@ -72,24 +72,11 @@ struct RTCPMessage {
         switch packetType {
         case .receiverReport:
             for i in 0..<receptionReportCount {
-                let ssrc_r = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr, as: UInt32.self)
-                }
-                let fractionLost =
-                    Double(
-                        data.withUnsafeBytes({ bytes in
-                            bytes.load(fromByteOffset: ptr + 4, as: UInt8.self)
-                        })
-                    ) / 256.0
-                let t0 = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 5, as: UInt8.self)
-                }
-                let t1 = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 6, as: UInt8.self)
-                }
-                let t2 = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 7, as: UInt8.self)
-                }
+                let ssrc_r = data.read(at: ptr, as: UInt32.self).bigEndian
+                let fractionLost = Double(data.read(at: ptr + 4, as: UInt8.self).bigEndian) / 256.0
+                let t0 = data.read(at: ptr + 5, as: UInt8.self).bigEndian
+                let t1 = data.read(at: ptr + 6, as: UInt8.self).bigEndian
+                let t2 = data.read(at: ptr + 7, as: UInt8.self).bigEndian
                 // > The total number of RTP data packets from source SSRC_n that have
                 // > been lost since the beginning of reception.  This number is
                 // > defined to be the number of packets expected less the number of
@@ -102,21 +89,11 @@ struct RTCPMessage {
                 // > be calculated as shown in Appendix A.3.
                 let totalLost: UInt32 = UInt32(t2) | UInt32(t1) << 8 | UInt32(t0) << 16
 
-                let lastSequenceNumber = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 8, as: UInt32.self)
-                }
+                let lastSequenceNumber = data.read(at: ptr + 8, as: UInt32.self).bigEndian
                 let jitter =
-                    Double(
-                        data.withUnsafeBytes({ bytes in
-                            bytes.load(fromByteOffset: ptr + 12, as: UInt32.self)
-                        })
-                    ) / Double(90000)
-                let lastSenderReport = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 16, as: UInt32.self)
-                }
-                let delay = data.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: ptr + 20, as: UInt32.self)
-                }
+                    Double(data.read(at: ptr + 12, as: UInt32.self).bigEndian) / Double(90000)
+                let lastSenderReport = data.read(at: ptr + 16, as: UInt32.self).bigEndian
+                let delay = data.read(at: ptr + 20, as: UInt32.self).bigEndian
 
                 print(
                     """

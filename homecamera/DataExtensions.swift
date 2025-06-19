@@ -19,4 +19,10 @@ extension Data {
             self += $0
         }
     }
+
+    func read<T>(at: Data.Index = 0, as type: T.Type) -> T {
+        withUnsafeBytes { bytes in
+            bytes.load(fromByteOffset: at, as: type)
+        }
+    }
 }

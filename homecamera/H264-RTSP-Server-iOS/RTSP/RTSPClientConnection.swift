@@ -84,7 +84,7 @@ class RTSPClientConnection {
                     conn.address = address
                 case .dataCallBack:
                     if let data {
-                        conn.onSocketData(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue())
+                        conn.onSocketData(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data)
                     }
                 default:
                     print("unexpected socket event")
@@ -98,8 +98,8 @@ class RTSPClientConnection {
         self.state = .idle
     }
 
-    private func onSocketData(_ data: CFData) {
-        if CFDataGetLength(data) == 0 {
+    private func onSocketData(_ data: Data) {
+        if data.isEmpty {
             shutdown()
             server?.shutdownConnection(self)
             return
@@ -293,7 +293,7 @@ class RTSPClientConnection {
         guard let data = CFSocketCopyPeerAddress(socket) else {
             fatalError("No peer address for socket")
         }
-        var paddr = (data as Data).withUnsafeBytes { $0.load(as: sockaddr_in.self) }
+        var paddr = (data as Data).read(as: sockaddr_in.self)
 
         paddr.sin_port = in_port_t(UInt16(portRTP).bigEndian)
         guard let addrRTP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
