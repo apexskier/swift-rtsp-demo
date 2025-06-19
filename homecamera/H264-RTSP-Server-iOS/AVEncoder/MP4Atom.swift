@@ -4,6 +4,8 @@ typealias MP4AtomType = UInt32
 
 extension MP4AtomType {
     init(_ string: String) {
+        assert(string.count == 4, "MP4AtomType must be initialized with a 4-character string")
+        // big endian encoding of a 4-character string as UInt32
         self = string.utf8.reduce(0) { ($0 << 8) | UInt32($1) }
     }
 }
@@ -39,15 +41,15 @@ struct MP4Atom {
         var data = file.readData(ofLength: 8)
         var cHeader = 8
         guard data.count == 8 else { return nil }
-        let p = [UInt8](data)
-        var len = Int64(toHost(p))
-        let fourcc = toHost(Array(p[4..<8]))
+        var len = Int64(data.read(as: UInt32.self).bigEndian)
+        let fourcc = data.read(at: 4, as: UInt32.self).bigEndian
         if len == 1 {
             // 64-bit extended length
             cHeader += 8
             data = file.readData(ofLength: 8)
-            let extp = [UInt8](data)
-            len = (Int64(toHost(Array(extp[0..<4]))) << 32) + Int64(toHost(Array(extp[4..<8])))
+            len =
+                (Int64(data.read(as: UInt32.self).bigEndian) << 32)
+                + Int64(data.read(at: 4, as: UInt32.self).bigEndian)
         } else if len == 0 {
             // whole remaining parent space
             len = length - Int64(nextChildOffset)
@@ -77,11 +79,4 @@ struct MP4Atom {
     mutating func child(ofType fourcc: String, startAt offset: UInt64 = 0) -> MP4Atom? {
         child(ofType: MP4AtomType(fourcc), startAt: offset)
     }
-}
-
-// TODO: remove
-// Helper: Convert 4 big-endian bytes to UInt32
-fileprivate func toHost(_ p: [UInt8]) -> UInt32 {
-    precondition(p.count >= 4)
-    return (UInt32(p[0]) << 24) | (UInt32(p[1]) << 16) | (UInt32(p[2]) << 8) | UInt32(p[3])
 }
