@@ -42,14 +42,14 @@ struct MP4Atom {
         var cHeader = 8
         guard data.count == 8 else { return nil }
         var len = Int64(data.read(as: UInt32.self).bigEndian)
-        let fourcc = data.read(at: 4, as: UInt32.self).bigEndian
+        let fourcc = data.read(at: data.startIndex + 4, as: UInt32.self).bigEndian
         if len == 1 {
             // 64-bit extended length
             cHeader += 8
             data = file.readData(ofLength: 8)
             len =
                 (Int64(data.read(as: UInt32.self).bigEndian) << 32)
-                + Int64(data.read(at: 4, as: UInt32.self).bigEndian)
+                + Int64(data.read(at: data.startIndex + 4, as: UInt32.self).bigEndian)
         } else if len == 0 {
             // whole remaining parent space
             len = length - Int64(nextChildOffset)

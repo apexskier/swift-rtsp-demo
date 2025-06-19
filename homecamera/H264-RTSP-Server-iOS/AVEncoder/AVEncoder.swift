@@ -322,7 +322,7 @@ class AVEncoder {
             if bytesToNextAtom == 0 {
                 let hdr = inputFile.readData(ofLength: 8)
                 let lenAtom = hdr.read(as: UInt32.self).bigEndian
-                let nameAtom = hdr.read(at: 4, as: UInt32.self).bigEndian
+                let nameAtom = hdr.read(at: hdr.startIndex + 4, as: UInt32.self).bigEndian
                 if nameAtom == MP4AtomType("mdat") {
                     foundMDAT = true
                     posMDAT = inputFile.offsetInFile - 8

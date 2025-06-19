@@ -22,7 +22,7 @@ extension Data {
 
     func read<T>(at: Data.Index = 0, as type: T.Type) -> T {
         withUnsafeBytes { bytes in
-            bytes.load(fromByteOffset: at, as: type)
+            bytes.load(fromByteOffset: at - self.startIndex, as: type)
         }
     }
 }
