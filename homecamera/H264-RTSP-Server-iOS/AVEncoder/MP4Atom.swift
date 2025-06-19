@@ -52,7 +52,7 @@ struct MP4Atom {
             // whole remaining parent space
             len = length - Int64(nextChildOffset)
         }
-        if fourcc == toHost([0x75, 0x75, 0x69, 0x64]) { // 'uuid'
+        if fourcc == MP4AtomType("uuid") {
             cHeader += 16
         }
         if (len < 0) || ((len + Int64(nextChildOffset)) > length) {
