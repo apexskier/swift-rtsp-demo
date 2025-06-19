@@ -39,25 +39,36 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem {
-                    Picker(
-                        selection: .init(
-                            get: {
-                                cameraServer.device?.uniqueID
-                            },
-                            set: { newValue in
-                                if let newValue {
-                                    cameraServer.device = AVCaptureDevice(uniqueID: newValue)
-                                } else {
-                                    cameraServer.device = nil
+                    Button {
+                        UIScreen.main.brightness = 0
+                    } label: {
+                        Label("Battery Saver", systemImage: "powersleep")
+                    }
+                }
+                ToolbarItem {
+                    Menu {
+                        Picker(
+                            "Camera",
+                            selection: .init(
+                                get: {
+                                    cameraServer.device?.uniqueID
+                                },
+                                set: { newValue in
+                                    if let newValue {
+                                        cameraServer.device = AVCaptureDevice(uniqueID: newValue)
+                                    } else {
+                                        cameraServer.device = nil
+                                    }
                                 }
+                            )
+                        ) {
+                            Text("Select Camera").tag(nil as String?)
+                                .selectionDisabled()
+                            ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
+                                device in
+                                Text(device.localizedName).tag(device.uniqueID)
+                                    .selectionDisabled(!device.isConnected)
                             }
-                        )
-                    ) {
-                        Text("Select Camera").tag(nil as String?)
-                            .selectionDisabled()
-                        ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) { device in
-                            Text(device.localizedName).tag(device.uniqueID)
-                                .selectionDisabled(!device.isConnected)
                         }
                     } label: {
                         Label(
