@@ -34,6 +34,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"H264-RTSP-Server-iOS/AVEncoder/MP4Atom.swift",
+				"H264-RTSP-Server-iOS/AVEncoder/NALUnit.swift",
 			);
 			target = C5F17EAE2DF887A100A17E3F /* homecameraTests */;
 		};
@@ -191,7 +192,6 @@
 					};
 					C5F17EAE2DF887A100A17E3F = {
 						CreatedOnToolsVersion = 16.0;
-						TestTargetID = C5F17E9D2DF887A000A17E3F;
 					};
 					C5F17EB82DF887A100A17E3F = {
 						CreatedOnToolsVersion = 16.0;
@@ -487,7 +487,6 @@
 		C5F17EC72DF887A100A17E3F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -502,7 +501,6 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/homecamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/homecamera";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Debug;
@@ -510,7 +508,6 @@
 		C5F17EC82DF887A100A17E3F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -525,7 +522,6 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/homecamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/homecamera";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Release;

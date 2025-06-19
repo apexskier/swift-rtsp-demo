@@ -25,46 +25,30 @@ public final class NALUnit {
         case unknown = 0
 
         init(byte: UInt8) {
-            self = NALType(rawValue: byte & 0x1F) ?? .unknown
+            self = NALType(rawValue: byte & 0b00011111) ?? .unknown
         }
     }
 
-    private(set) var start: UnsafePointer<UInt8>?
-    private(set) var startCodeStart: UnsafePointer<UInt8>?
-    private(set) var length: Int = 0
+    let data: Data
 
     // Bitstream access
-    private var idx: Int = 0
+    private var idx: Int
     private var nBits: Int = 0
     private var byte: UInt8 = 0
     private var cZeros: Int = 0
 
-    init() {
-        self.start = nil
-        self.length = 0
-    }
-
-    init(start: UnsafePointer<UInt8>, length: Int) {
-        self.start = start
-        self.startCodeStart = start
-        self.length = length
+    init(data: Data) {
+        self.data = data
+        self.idx = data.startIndex
         self.resetBitstream()
     }
 
-    convenience init(data: Data, offset: Int = 0, length: Int? = nil) {
-        let bytes = data.withUnsafeBytes {
-            $0.baseAddress!.assumingMemoryBound(to: UInt8.self)
-        }
-        self.init(start: bytes.advanced(by: offset), length: length ?? data.count)
-    }
-
     func type() -> NALType {
-        guard let start = self.start else { return .unknown }
-        return NALType(byte: start.pointee)
+        NALType(byte: data[data.startIndex])
     }
 
     public func resetBitstream() {
-        self.idx = 0
+        self.idx = data.startIndex
         self.nBits = 0
         self.cZeros = 0
     }
@@ -89,13 +73,13 @@ public final class NALUnit {
 
     // get the next byte, removing emulation prevention bytes
     public func getBYTE() -> UInt8 {
-        guard let start, idx < self.length else { return 0 }
-        let b = start.advanced(by: idx).pointee
+        guard idx < data.count else { return 0 }
+        let b = data[idx]
         idx += 1
         // to avoid start-code emulation, a byte 0x03 is inserted after any 00 00 pair. Discard that here.
         if b == 0 {
             cZeros += 1
-            if idx < self.length && cZeros == 2 && start.advanced(by: idx).pointee == 0x03 {
+            if idx < data.count && cZeros == 2 && data[idx] == 0x03 {
                 idx += 1
                 cZeros = 0
             }
@@ -145,12 +129,11 @@ public final class NALUnit {
     }
 
     public func noMoreBits() -> Bool {
-        return idx >= length && nBits == 0
+        idx >= data.count && nBits == 0
     }
 
     public func isRefPic() -> Bool {
-        guard let start = self.start else { return false }
-        return (start.pointee & 0x60) != 0
+        (data[data.startIndex] & 0x60) != 0
     }
 }
 
@@ -158,8 +141,8 @@ public final class NALUnit {
 
 public struct SeqParamSet {
     let frameBits: Int
-    private(set) var cx: Int
-    private(set) var cy: Int
+    let cx: Int
+    let cy: Int
     let interlaced: Bool
     let profile: Int
     let level: Int
@@ -229,8 +212,8 @@ public struct SeqParamSet {
 
         let mbsWidth = Int(nalu.getUE())
         let mbsHeight = Int(nalu.getUE())
-        cx = (mbsWidth + 1) * 16
-        cy = (mbsHeight + 1) * 16
+        let cx = (mbsWidth + 1) * 16
+        var cy = (mbsHeight + 1) * 16
 
         // smoke test validation of sps
         if cx > 2000 || cy > 2000 { return nil }
@@ -246,6 +229,9 @@ public struct SeqParamSet {
             // adjust heights from field to frame
             cy *= 2
         }
+
+        self.cx = cx
+        self.cy = cy
 
         // .. rest are not interesting yet
     }
@@ -330,7 +316,7 @@ public struct AVCCHeader {
         guard data.count >= 8 else { return nil }
         lengthSize = Int(data[4] & 3) + 1
         let cSeq = Int(data[5] & 0x1f)
-        var p = 6
+        var p = data.startIndex.advanced(by: 6)
         var sps: NALUnit?
         for i in 0..<cSeq {
             if p + 2 > data.count { return nil }
@@ -338,7 +324,7 @@ public struct AVCCHeader {
             p += 2
             if p + cThis > data.count { return nil }
             if i == 0 {
-                sps = NALUnit(data: data, offset: p, length: cThis)
+                sps = NALUnit(data: data[p..<p + cThis])
             }
             p = p.advanced(by: cThis)
         }
@@ -347,7 +333,7 @@ public struct AVCCHeader {
         if cPPS > 0 {
             let cThis = Int(data[p + 1] << 8 | data[p + 2])
             p += 3
-            pps = NALUnit(data: data, offset: p, length: cThis)
+            pps = NALUnit(data: data[p..<p + cThis])
         } else {
             return nil
         }

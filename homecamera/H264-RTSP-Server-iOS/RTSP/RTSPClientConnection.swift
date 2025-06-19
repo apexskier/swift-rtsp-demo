@@ -249,10 +249,8 @@ class RTSPClientConnection {
             seqParams.level
         )
 
-        let spsData = Data(bytes: avcC.sps.start!, count: avcC.sps.length)
-        let spsBase64 = spsData.base64EncodedString()
-        let ppsData = Data(bytes: avcC.pps.start!, count: avcC.pps.length)
-        let ppsBase64 = ppsData.base64EncodedString()
+        let spsBase64 = avcC.sps.data.base64EncodedString()
+        let ppsBase64 = avcC.pps.data.base64EncodedString()
 
         let verid = UInt32.random(in: UInt32.min...UInt32.max)
 
@@ -416,10 +414,10 @@ class RTSPClientConnection {
                 writeHeader(&packet, marker: bLast, time: pts)
                 packet.replaceSubrange(packet.startIndex.advanced(by: rtpHeaderSize)..., with: nalu)
                 sendPacket(
-                    packet.subdata(
-                        in: packet
+                    packet[
+                        packet
                             .startIndex..<packet.startIndex.advanced(by: countBytes + rtpHeaderSize)
-                    )
+                    ]
                 )
             } else {
                 var pointerNalu = nalu.startIndex
@@ -450,12 +448,12 @@ class RTSPClientConnection {
                     ] =
                         nalu[pointerNalu..<(pointerNalu + countThis)]
                     sendPacket(
-                        packet.subdata(
-                            in: packet
+                        packet[
+                            packet
                                 .startIndex..<packet.startIndex.advanced(
                                     by: countThis + rtpHeaderSize + 2
                                 )
-                        )
+                        ]
                     )
 
                     pointerNalu += countThis
