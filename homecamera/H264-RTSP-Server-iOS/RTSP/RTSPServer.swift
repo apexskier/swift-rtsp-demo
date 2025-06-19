@@ -3,9 +3,10 @@ import CoreServices
 import Foundation
 import Network
 
+@Observable
 class RTSPServer {
     private var listener: CFSocket?
-    private var connections: [RTSPClientConnection] = []
+    private(set) var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
     var bitrate: Int = 0
     let port: UInt16 = 554

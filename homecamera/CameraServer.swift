@@ -64,7 +64,7 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var output: AVCaptureVideoDataOutput? = nil
     private var captureQueue: DispatchQueue? = nil
     private var encoder: AVEncoder? = nil
-    private var rtsp: RTSPServer? = nil
+    var rtsp: RTSPServer? = nil
     private var firstCaptureTimestamp: Date? = nil
 
     // TODO: observe device discovery changes using KV

@@ -1,30 +1,46 @@
-import Foundation
 import AVKit
+import Foundation
 
 // RTSPMessage: Parses RTSP requests and generates responses
+// RFC 2326
 struct RTSPMessage {
-    private var lines: [String] = []
-    var command: String
-    var sequence: Int
+    let command: String
+    private let sequence: Int
+    let headers: [String: String]
+    let body: String?
+    let length: Int
 
     init?(_ data: Data) {
-        guard let msg = String(data: data, encoding: .utf8) else {
-            print("msg parse error: invalid UTF-8")
+        guard let range = data.firstRange(of: "\r\n\r\n".utf8) else {
+            print("msg parse error: no end of headers")
             return nil
         }
-        self.lines = msg.components(separatedBy: "\r\n")
-        // Must have at least request and one header
-        guard lines.count >= 2 else {
-            print("msg parse error")
+
+        guard let msg = String(data: data[data.startIndex..<range.lowerBound], encoding: .utf8)
+        else {
+            print("msg headers parse error: invalid UTF-8")
             return nil
         }
-        let lineOne = lines[0].components(separatedBy: " ")
-        guard let request = lineOne.first else {
-            print("msg parse error: no request")
+        var msgLines = msg.components(separatedBy: "\r\n")
+        guard msgLines.count > 1,
+            let request = msgLines.removeFirst().components(separatedBy: " ").first
+        else {
+            print("msg parse error: no request line")
             return nil
         }
         self.command = request
-        guard let strSeq = RTSPMessage.extractValue(for: "CSeq", in: lines) else {
+        self.headers = [String: String](
+            uniqueKeysWithValues: msgLines.compactMap({ line -> (String, String)? in
+                let parts = line.split(separator: ":", maxSplits: 1)
+                guard parts.count == 2 else {
+                    print("msg parse error: invalid header line \(line)")
+                    return nil
+                }
+                return (parts[0].lowercased(), parts[1].trimmingCharacters(in: .whitespaces))
+            })
+        )
+
+        guard let strSeq = headers["cseq"] else {
             print("no cseq")
             return nil
         }
@@ -33,11 +49,19 @@ struct RTSPMessage {
             return nil
         }
         self.sequence = cseq
-    }
 
-    // Find the value for a given RTSP header option (case-insensitive)
-    func valueForOption(_ option: String) -> String? {
-        RTSPMessage.extractValue(for: option, in: lines)
+        if let strContentLen = headers["content-length"],
+            let contentLength = Int(strContentLen)
+        {
+            self.body = String(
+                data: data[range.upperBound..<range.upperBound.advanced(by: contentLength)],
+                encoding: .utf8
+            )
+            self.length = (range.upperBound - data.startIndex) + contentLength
+        } else {
+            self.body = nil
+            self.length = range.upperBound - data.startIndex
+        }
     }
 
     private static func extractValue(for option: String, in lines: [String]) -> String? {
@@ -61,6 +85,7 @@ struct RTSPMessage {
 
 extension RTSPMessage: CustomDebugStringConvertible {
     var debugDescription: String {
-        lines.joined(separator: "\n")
+        headers.map { "\($0.key): \($0.value)" }
+            .joined(separator: "\n") + "\n" + (body ?? "")
     }
 }

@@ -14,15 +14,24 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack {
-                if let session = cameraServer.session {
-                    CameraPreview(session: session)
-                        .ignoresSafeArea()
-                } else {
-                    ProgressView("Starting camera…")
-                }
+            HStack {
+                VStack {
+                    if let session = cameraServer.session {
+                        CameraPreview(session: session)
+                            .ignoresSafeArea()
+                    } else {
+                        ProgressView("Starting camera…")
+                    }
 
-                CameraPreview2(pipeline: cameraServer.pipeline)
+                    CameraPreview2(pipeline: cameraServer.pipeline)
+                }
+                VStack {
+                    if let rtsp = cameraServer.rtsp {
+                        ForEach(rtsp.connections, id: \.socket) { connection in
+                            Text(connection.sourceDescription ?? "unnamed")
+                        }
+                    }
+                }
             }
             .toolbar {
                 ToolbarItem {

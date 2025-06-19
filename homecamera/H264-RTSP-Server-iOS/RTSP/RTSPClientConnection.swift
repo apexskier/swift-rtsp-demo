@@ -1,3 +1,4 @@
+import Combine
 import CoreFoundation
 import Foundation
 import Network
@@ -39,8 +40,9 @@ private enum RTSPSession {
     }
 }
 
+@Observable
 class RTSPClientConnection {
-    private var socket: CFSocket?
+    private(set) var socket: CFSocket?
     private var address: CFData?
     private var sessionConnection: RTSPSession?
     private weak var server: RTSPServer?
@@ -61,6 +63,9 @@ class RTSPClientConnection {
     private var rlsRTCP: CFRunLoopSource?
     private let clock = 90000  // RTP clock rate for H264
     private let serverPort: UInt16 = 6971
+    private(set) var sourceDescription: String? = nil
+
+    public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
         self.server = server
@@ -102,94 +107,75 @@ class RTSPClientConnection {
 
     private var partialPacket: (data: Data, left: UInt16)?
 
-    private func onSocketData(_ data: Data) {
-        if data.isEmpty {
+    private func onSocketData(_ allData: Data) {
+        if allData.isEmpty {
             shutdown()
             server?.shutdownConnection(self)
             return
         }
 
         if case .interleaved = sessionConnection {
-            // possibilities here
-            // - complete RTSP packet
-            // - complete RTCP packet
-            // - RTCP packet header, with remainder of data in next packet
-            // - RTSP packet followed by RTCP packet
-            // - multiple RTCP packets
+            var ptr = allData.startIndex
 
-            if var partialPacket {
-                partialPacket.data.append(contentsOf: data)
-                if data.count < Int(partialPacket.left) {
-                    partialPacket.left -= UInt16(data.count)
-                } else {
-                    onRTCP(partialPacket.data)
-                    self.partialPacket = nil
+            while ptr < allData.endIndex {  // '$' indicates an RTSP interleaved frame
+                // possibilities here
+                // - complete RTSP packet
+                // - complete RTCP packet
+                // - RTCP packet header, with remainder of data in next packet
+                // - RTSP packet followed by RTCP packet
+                // - multiple RTCP packets
+
+                let data = allData[ptr...]
+                if ptr > 0 {
+                    print("processing additional data")
                 }
-            } else if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
-                // let channel = data[1]  // channel number
-                let length = data.read(at: data.startIndex + 2, as: UInt16.self).bigEndian
-                let remainingDataCount = data.count - 4
-                let interleavedData = data[data.startIndex.advanced(by: 4)...]
-                if remainingDataCount < length {
-                    partialPacket = (interleavedData, length - UInt16(interleavedData.count))
+
+                if var partialPacket {
+                    partialPacket.data.append(contentsOf: data)
+                    if data.count < Int(partialPacket.left) {
+                        partialPacket.left -= UInt16(data.count)
+                    } else {
+                        onRTCP(partialPacket.data)
+                        self.partialPacket = nil
+                    }
+                    ptr += data.count
+                } else if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
+                    // let channel = data[1]  // channel number
+                    let length = data.read(at: data.startIndex + 2, as: UInt16.self).bigEndian
+                    let remainingDataCount = data.count - 4
+                    let interleavedData = data[data.startIndex.advanced(by: 4)...]
+                    if remainingDataCount < length {
+                        partialPacket = (interleavedData, length - UInt16(interleavedData.count))
+                    } else {
+                        // ASSUMING RTCP
+                        onRTCP(interleavedData)
+                    }
+                    ptr += 4 + Int(length)
                 } else {
-                    // ASSUMING RTCP
-                    onRTCP(interleavedData)
+                    // RTSP packet
+                    let len = handleRTSPPacket(data)
+                    ptr += len
+                    // if remaining data, could be a RTCP packet
                 }
-            } else {
-                // RTSP packet
-                handleRTSPPacket(data)
             }
-
-            // var ptr = allData.startIndex
-            // while ptr < allData.endIndex {
-            //     let remainingData = allData[ptr...]
-            //     if var partialPacket {
-            //         partialPacket.data.append(contentsOf: remainingData)
-            //         if remainingData.count < Int(partialPacket.left) {
-            //             partialPacket.left -= UInt16(remainingData.count)
-            //         } else {
-            //             onRTCP(partialPacket.data)
-            //             self.partialPacket = nil
-            //         }
-            //         ptr += remainingData.count
-            //     } else if remainingData[remainingData.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
-            //         // let channel = data[1]  // channel number
-            //         let length = remainingData.read(at: 2, as: UInt16.self).bigEndian
-            //         let remainingDataCount = remainingData.count - 4
-            //         let interleavedData = remainingData[remainingData.startIndex.advanced(by: 4)...]
-            //         if remainingDataCount < length {
-            //             partialPacket = (interleavedData, length - UInt16(interleavedData.count))
-            //         } else {
-            //             // ASSUMING RTCP
-            //             onRTCP(interleavedData)
-            //         }
-            //         ptr += remainingData.count
-            //     } else if let range = allData[ptr...].firstRange(of: "\r\n\r\n".utf8) {
-            //         // RTSP packet
-            //         // this assumes there are never RTSP messages with content, as content would show up after a double CRLF https://datatracker.ietf.org/doc/html/rfc2326#page-20
-            //         let data = allData[ptr..<range.upperBound]
-            //         handleRTSPPacket(data)
-            //         ptr += data.count
-            //     } else {
-            //         print("Unexpected data in RTSPClientConnection")
-            //     }
-            // }
         } else {
-            handleRTSPPacket(data)
+            let len = handleRTSPPacket(allData)
+            if len < allData.count {
+                print("additional data after RTSP packet")
+            }
         }
     }
 
-    private func handleRTSPPacket(_ data: Data) {
-        guard let msg = RTSPMessage(data) else { return }
+    private func handleRTSPPacket(_ data: Data) -> Int {
+        guard let msg = RTSPMessage(data) else { return 0 }
         var response = [String]()
         let cmd = msg.command.lowercased()
-        print(
-            """
-            C->S: (\(session ?? "no session"))
-            > \(msg.debugDescription.split(separator: "\n").joined(separator: "\n> "))
-            """
-        )
+        // print(
+        //     """
+        //     C->S: (\(session ?? "no session"))
+        //     > \(msg.debugDescription.split(separator: "\n").joined(separator: "\n> "))
+        //     """
+        // )
         switch cmd {
         case "options":
             response = msg.createResponse(code: 200, text: "OK")
@@ -219,7 +205,7 @@ class RTSPClientConnection {
             ]
             response += sdp
         case "setup":
-            if let transport = msg.valueForOption("transport") {
+            if let transport = msg.headers["transport"] {
                 let props = transport.components(separatedBy: ";")
                 var ports: [String]? = nil
                 for s in props {
@@ -295,14 +281,15 @@ class RTSPClientConnection {
             let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8),
             let socket
         {
-            print(
-                """
-                S->C: (\(session ?? "no session"))
-                > \(response.joined(separator: "\n> "))
-                """
-            )
+            // print(
+            //     """
+            //     S->C: (\(session ?? "no session"))
+            //     > \(response.joined(separator: "\n> "))
+            //     """
+            // )
             CFSocketSendData(socket, nil, responseData as CFData, 2)
         }
+        return msg.length
     }
 
     private func makeSDP() -> [String] {
@@ -642,17 +629,27 @@ class RTSPClientConnection {
     private func onRTCP(_ data: Data) {
         var ptr = data.startIndex
         while ptr < data.endIndex {
-            print(
-                """
-                C->S: RTCP (\(session ?? "no session")) 
-                """
-            )
+            // print(
+            //     """
+            //     C->S: RTCP (\(session ?? "no session"))
+            //     """
+            // )
 
             if let message = RTCPMessage(data: data[ptr...], clock: clock) {
                 ptr += Int(message.byteLength)
+
+                switch message.packet {
+                case .receiverReport(let rRPacket):
+                    rRPacket.blocks.forEach({ receiverReports.send($0) })
+                case .sourceDescription(let sDESPacket):
+                    sourceDescription = sDESPacket.chunks.first?.text
+                case .goodbye:
+                    break
+                default:
+                    print("RTCP packet type \(message.type) not handled")
+                }
             } else {
                 print("RTCP packet parsing failed")
-                return
             }
         }
     }
