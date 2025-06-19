@@ -12,11 +12,6 @@ private struct EncodedFrame {
     let frame: [Data]
 }
 
-// TODO: Remove
-func to_host(_ x: Data) -> UInt32 {
-    x.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-}
-
 class AVEncoder {
     // MARK: - Properties
 
@@ -255,7 +250,7 @@ class AVEncoder {
         // re-read mdat length
         inputFile.seek(toFileOffset: posMDAT)
         let hdr = inputFile.readData(ofLength: 4)
-        let lenMDAT = to_host(hdr)
+        let lenMDAT = hdr.read(as: UInt32.self).bigEndian
 
         // extract nalus from saved position to mdat end
         let posEnd = posMDAT + UInt64(lenMDAT)
@@ -294,7 +289,7 @@ class AVEncoder {
                 continue
             }
             cReady -= UInt32(lengthSize)
-            let lenNALU = to_host(lenField)
+            let lenNALU = lenField.read(as: UInt32.self).bigEndian
             if lenNALU > cReady {
                 // whole NALU not present -- seek back to start of NALU and wait for more
                 inputFile.seek(toFileOffset: inputFile.offsetInFile - 4)
@@ -326,8 +321,8 @@ class AVEncoder {
         while !foundMDAT && cReady > 8 {
             if bytesToNextAtom == 0 {
                 let hdr = inputFile.readData(ofLength: 8)
-                let lenAtom = to_host(hdr)
-                let nameAtom = to_host(hdr.advanced(by: 4))
+                let lenAtom = hdr.read(as: UInt32.self).bigEndian
+                let nameAtom = hdr.read(at: 4, as: UInt32.self).bigEndian
                 if nameAtom == MP4AtomType("mdat") {
                     foundMDAT = true
                     posMDAT = inputFile.offsetInFile - 8

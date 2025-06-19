@@ -79,6 +79,7 @@ struct MP4Atom {
     }
 }
 
+// TODO: remove
 // Helper: Convert 4 big-endian bytes to UInt32
 fileprivate func toHost(_ p: [UInt8]) -> UInt32 {
     precondition(p.count >= 4)
