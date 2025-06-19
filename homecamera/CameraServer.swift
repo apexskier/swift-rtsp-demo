@@ -10,6 +10,13 @@ import AVFoundation
 import Foundation
 import SwiftUI
 
+let font = UIFont.systemFont(ofSize: 36)
+let fontAttributes = [
+    NSAttributedString.Key.font: font,
+    NSAttributedString.Key.foregroundColor: UIColor.white,
+    NSAttributedString.Key.backgroundColor: UIColor.black,
+]
+
 @Observable
 final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
@@ -155,16 +162,11 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         }
 
         UIGraphicsPushContext(context)
-        let font = UIFont.systemFont(ofSize: 36)
         let timestamp = sampleBuffer.presentationTimeStamp
         let d = Date(timeInterval: timestamp.seconds, since: firstCaptureTimestamp!)
         let string = NSAttributedString(
             string: d.formatted(date: .abbreviated, time: .standard),
-            attributes: [
-                NSAttributedString.Key.font: font,
-                NSAttributedString.Key.foregroundColor: UIColor.white,
-                NSAttributedString.Key.backgroundColor: UIColor.black,
-            ]
+            attributes: fontAttributes
         )
         context.saveGState()
         context.translateBy(x: 0, y: CGFloat(height))
