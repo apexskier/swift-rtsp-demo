@@ -22,8 +22,6 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     // Singleton instance
     static let shared = CameraServer()
 
-    // MARK: - Properties
-
     var session: AVCaptureSession? = nil
     let deviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
@@ -68,12 +66,10 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
     // TODO: observe device discovery changes using KV
 
-    // MARK: - Startup
-
     func startup() {
         guard session == nil else { return }
 
-        print("Starting up server")
+        print("Starting up camera server")
 
         // Create capture device with video input
         let session = AVCaptureSession()
@@ -104,7 +100,7 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             }
         } onParams: { [weak self] data in
             guard let self else { return }
-            self.rtsp = RTSPServer(configData: data)
+            rtsp = RTSPServer(configData: data)
         }
 
         self.encoder = encoder
@@ -115,8 +111,6 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         self.session = session
         self.output = output
     }
-
-    // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
 
     func captureOutput(
         _ output: AVCaptureOutput,
@@ -182,10 +176,8 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         encoder?.encode(frame: sampleBuffer)
     }
 
-    // MARK: - Shutdown
-
     func shutdown() {
-        print("shutting down server")
+        print("Shutting down camera server")
         session?.stopRunning()
         self.session = nil
         rtsp?.shutdownServer()
@@ -195,8 +187,6 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         self.output = nil
         self.captureQueue = nil
     }
-
-    // MARK: - Utilities
 
     func getURL() -> String? {
         guard let rtsp else { return nil }
@@ -217,17 +207,13 @@ struct CameraPreview: UIViewRepresentable {
 
     let session: AVCaptureSession?
 
-    var view: VideoPreviewView = {
+    func makeUIView(context: Context) -> VideoPreviewView {
         let view = VideoPreviewView()
         view.backgroundColor = .black
         view.videoPreviewLayer?.videoGravity = .resizeAspectFill
+        view.videoPreviewLayer?.session = session
         return view
-    }()
-
-    func makeUIView(context: Context) -> VideoPreviewView {
-        self.view.videoPreviewLayer?.session = self.session
-        return self.view
     }
 
-    func updateUIView(_ uiView: VideoPreviewView, context: Context) {}
+    func updateUIView(_ view: VideoPreviewView, context: Context) {}
 }
