@@ -82,9 +82,9 @@ struct ContentView: View {
             }
         }
         .task {
-            Task(priority: .background) {
-                cameraServer.startup()
-                UIApplication.shared.isIdleTimerDisabled = true
+            UIApplication.shared.isIdleTimerDisabled = true
+            Task.detached {
+                await cameraServer.startup()
             }
         }
     }
