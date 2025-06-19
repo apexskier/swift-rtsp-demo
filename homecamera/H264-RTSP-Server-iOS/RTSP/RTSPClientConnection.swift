@@ -84,7 +84,9 @@ class RTSPClientConnection {
                     conn.address = address
                 case .dataCallBack:
                     if let data {
-                        conn.onSocketData(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data)
+                        conn.onSocketData(
+                            Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
+                        )
                     }
                 default:
                     print("unexpected socket event")
@@ -98,18 +100,46 @@ class RTSPClientConnection {
         self.state = .idle
     }
 
+    private var partialPacket: (data: Data, left: UInt16)?
+
     private func onSocketData(_ data: Data) {
         if data.isEmpty {
             shutdown()
             server?.shutdownConnection(self)
             return
         }
-        guard let msg = RTSPMessage(data as Data) else { return }
+
+        if case .interleaved = sessionConnection {
+            if var partialPacket {
+                partialPacket.data.append(contentsOf: data)
+                if data.count < Int(partialPacket.left) {
+                    partialPacket.left -= UInt16(data.count)
+                } else {
+                    onRTCP(partialPacket.data)
+                    self.partialPacket = nil
+                }
+                return
+            }
+
+            if data[0] == 0x24 {  // '$' indicates an RTSP interleaved frame
+                // let channel = data[1]  // channel number
+                let length = data.read(at: 2, as: UInt16.self).bigEndian
+                if data.count < length + 4 {
+                    partialPacket = (data[4...], length - UInt16((data.count - 4)))
+                } else {
+                    // ASSUMING RTCP
+                    onRTCP(data)
+                }
+                return
+            }
+        }
+
+        guard let msg = RTSPMessage(data) else { return }
         var response = [String]()
         let cmd = msg.command.lowercased()
         print(
             """
-            C->S:
+            C->S: (\(session ?? "no session"))
             > \(msg.debugDescription.split(separator: "\n").joined(separator: "\n> "))
             """
         )
@@ -220,7 +250,7 @@ class RTSPClientConnection {
         {
             print(
                 """
-                S->C:
+                S->C: (\(session ?? "no session"))
                 > \(response.joined(separator: "\n> "))
                 """
             )
@@ -360,7 +390,9 @@ class RTSPClientConnection {
                 switch callbackType {
                 case .dataCallBack:
                     if let data {
-                        conn.onRTCP(Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue())
+                        conn.onRTCP(
+                            Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
+                        )
                     }
                 default:
                     print("unexpected socket event")
@@ -560,10 +592,13 @@ class RTSPClientConnection {
         }
     }
 
-    private func onRTCP(_ data: CFData) {
-        // RTCP receive handler (not implemented)
-        print("RTCP packet received")
-        _ = RTCPMessage(data: data as Data, clock: clock)
+    private func onRTCP(_ data: Data) {
+        print(
+            """
+            C->S: RTCP (\(session ?? "no session")) 
+            """
+        )
+        _ = RTCPMessage(data: data, clock: clock)
     }
 
     private func tearDown() {

@@ -58,8 +58,8 @@ struct RTCPMessage {
         }
         let padding = data[ptr] & 0b00100000 != 0
         let receptionReportCount = data[ptr] & 0b00011111
-        guard let packetType = PacketType(rawValue: data[1]) else {
-            print("Unsupported RTCP packet type: \(data[1])")
+        guard let packetType = PacketType(rawValue: data[ptr + 1]) else {
+            print("Unsupported RTCP packet type: \(data[ptr + 1])")
             return nil
         }
         self.type = packetType
