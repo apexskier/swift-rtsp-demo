@@ -64,6 +64,7 @@ class AVEncoder {
 
     private var outputBlock: EncoderHandler?
     private var paramsBlock: ParamHandler?
+    private var outputSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     // estimate bitrate over first second
     private(set) var bitspersecond = 0
@@ -86,10 +87,12 @@ class AVEncoder {
 
     func encode(
         withBlock block: @escaping EncoderHandler,
-        onParams paramsHandler: @escaping ParamHandler
+        onParams paramsHandler: @escaping ParamHandler,
+        outputSampleBuffer: @escaping (CMSampleBuffer) -> Void
     ) {
         outputBlock = block
         paramsBlock = paramsHandler
+        self.outputSampleBuffer = outputSampleBuffer
         needParams = true
         pendingNALU = nil
         firstpts = -1
@@ -151,6 +154,7 @@ class AVEncoder {
             }
         }
         _ = writer?.encodeFrame(sampleBuffer)
+        outputSampleBuffer?(sampleBuffer)
         objc_sync_exit(self)
     }
 

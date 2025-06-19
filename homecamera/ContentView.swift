@@ -21,6 +21,8 @@ struct ContentView: View {
                 } else {
                     ProgressView("Starting camera…")
                 }
+
+                CameraPreview2(pipeline: cameraServer.pipeline)
             }
             .toolbar {
                 ToolbarItem {

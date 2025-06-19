@@ -9,6 +9,7 @@
 import AVFoundation
 import Foundation
 import SwiftUI
+import Combine
 
 let font = UIFont.systemFont(ofSize: 36)
 let fontAttributes = [
@@ -21,6 +22,8 @@ let fontAttributes = [
 final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
     static let shared = CameraServer()
+
+    let pipeline = PassthroughSubject<CMSampleBuffer, Never>()
 
     var session: AVCaptureSession? = nil
     let deviceDiscovery = AVCaptureDevice.DiscoverySession(
@@ -101,6 +104,9 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         } onParams: { [weak self] data in
             guard let self else { return }
             rtsp = RTSPServer(configData: data)
+        } outputSampleBuffer: { [weak self] buffer in
+            guard let self else { return }
+            pipeline.send(buffer)
         }
 
         self.encoder = encoder
@@ -209,11 +215,43 @@ struct CameraPreview: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VideoPreviewView {
         let view = VideoPreviewView()
-        view.backgroundColor = .black
-        view.videoPreviewLayer?.videoGravity = .resizeAspectFill
+        view.videoPreviewLayer?.videoGravity = .resizeAspect
         view.videoPreviewLayer?.session = session
         return view
     }
 
     func updateUIView(_ view: VideoPreviewView, context: Context) {}
+}
+
+struct CameraPreview2: UIViewRepresentable {
+    class VideoPreviewView: UIView {
+        override class var layerClass: AnyClass {
+            AVSampleBufferDisplayLayer.self
+        }
+
+        private var cancellable: AnyCancellable?
+
+        @MainActor var sampleBufferLayer: AVSampleBufferDisplayLayer? {
+            layer as? AVSampleBufferDisplayLayer
+        }
+
+        func setup(pipeline: PassthroughSubject<CMSampleBuffer, Never>) {
+            cancellable?.cancel()
+            cancellable = pipeline.receive(on: RunLoop.main).sink { buffer in
+                self.sampleBufferLayer?.sampleBufferRenderer.enqueue(buffer)
+            }
+        }
+    }
+
+    let pipeline: PassthroughSubject<CMSampleBuffer, Never>
+
+    func makeUIView(context: Context) -> VideoPreviewView {
+        let view = VideoPreviewView()
+        view.setup(pipeline: pipeline)
+        return view
+    }
+
+    func updateUIView(_ view: VideoPreviewView, context: Context) {
+        view.setup(pipeline: pipeline)
+    }
 }
