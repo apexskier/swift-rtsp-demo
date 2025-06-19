@@ -269,8 +269,8 @@ extension NALUnit {
 
 private struct SliceHeader {
     let framenum: Int
-    private var bField: Bool
-    private var bBottom: Bool
+    private let bField: Bool
+    private let bBottom: Bool
     let pocDelta: Int
     let pocLSB: Int
 
@@ -293,8 +293,8 @@ private struct SliceHeader {
 
         framenum = Int(nalu.getWord(sps.frameBits))
 
-        bField = false
-        bBottom = false
+        var bField = false
+        var bBottom = false
         if sps.interlaced {
             bField = nalu.getBit() != 0
             if bField { bBottom = nalu.getBit() != 0 }
@@ -313,6 +313,9 @@ private struct SliceHeader {
             pocLSB = 0
             pocDelta = 0
         }
+
+        self.bField = bField
+        self.bBottom = bBottom
     }
 }
 
@@ -366,8 +369,6 @@ public final class POCState {
     private(set) var frameNum: Int = 0
     private(set) var lastlsb: Int = 0
 
-    public init() {}
-
     public func setHeader(_ avc: AVCCHeader) {
         self.sps = SeqParamSet(avc.sps)
         let pps = avc.pps
@@ -391,18 +392,18 @@ public final class POCState {
             prevMSB = 0
         }
         let lsb = slice.pocLSB
-        var MSB = prevMSB
-        let maxlsb = 1 << sps.pocLSBBits
-        if (lsb < prevLSB) && ((prevLSB - lsb) >= (maxlsb / 2)) {
-            MSB = prevMSB + maxlsb
-        } else if (lsb > prevLSB) && ((lsb - prevLSB) > (maxlsb / 2)) {
-            MSB = prevMSB - maxlsb
+        var msb = prevMSB
+        let maxLSB = 1 << sps.pocLSBBits
+        if (lsb < prevLSB) && ((prevLSB - lsb) >= (maxLSB / 2)) {
+            msb = prevMSB + maxLSB
+        } else if (lsb > prevLSB) && ((lsb - prevLSB) > (maxLSB / 2)) {
+            msb = prevMSB - maxLSB
         }
         if nal.isRefPic() {
             self.prevLSB = lsb
-            self.prevMSB = MSB
+            self.prevMSB = msb
         }
         lastlsb = lsb
-        return MSB + lsb
+        return msb + lsb
     }
 }
