@@ -7,7 +7,7 @@ struct RTSPMessage {
     var command: String
     var sequence: Int
 
-    init?(data: Data) {
+    init?(_ data: Data) {
         guard let msg = String(data: data, encoding: .utf8) else {
             print("msg parse error: invalid UTF-8")
             return nil
@@ -56,11 +56,6 @@ struct RTSPMessage {
     // Create a response string for the given code and description
     func createResponse(code: Int, text desc: String) -> [String] {
         ["RTSP/1.0 \(code) \(desc)", "CSeq: \(sequence)"]
-    }
-
-    // Objective-C factory method
-    static func createWithData(_ data: CFData) -> RTSPMessage? {
-        RTSPMessage(data: data as Data)
     }
 }
 

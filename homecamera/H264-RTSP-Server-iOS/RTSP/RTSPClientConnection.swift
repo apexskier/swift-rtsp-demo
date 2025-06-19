@@ -104,7 +104,7 @@ class RTSPClientConnection {
             server?.shutdownConnection(self)
             return
         }
-        guard let msg = RTSPMessage.createWithData(data) else { return }
+        guard let msg = RTSPMessage(data as Data) else { return }
         var response = [String]()
         let cmd = msg.command.lowercased()
         print(
