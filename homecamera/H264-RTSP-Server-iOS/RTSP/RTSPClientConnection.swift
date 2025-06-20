@@ -469,7 +469,7 @@ class RTSPClientConnection {
                     continue
                 }
                 bFirst = false
-                print("Playback starting at first IDR")
+                print("Playback starting at first IDR \(session ?? "no session")")
             }
             if countBytes < maxSinglePacket {
                 var packet = Data(count: maxPacketSize)
@@ -625,6 +625,13 @@ class RTSPClientConnection {
 
     private func onRTCP(_ data: Data) {
         var ptr = data.startIndex
+
+        // two packets like this are sent on connection by VLC macos UDP
+        if data.elementsEqual([UInt8]([0xCE, 0xFA, 0xED, 0xFE])) {
+            print("ignoring unknown RTCP packet: CEFAEDFE")
+            return
+        }
+
         while ptr < data.endIndex {
             // print(
             //     """
@@ -647,6 +654,7 @@ class RTSPClientConnection {
                 }
             } else {
                 print("RTCP packet parsing failed")
+                return
             }
         }
     }

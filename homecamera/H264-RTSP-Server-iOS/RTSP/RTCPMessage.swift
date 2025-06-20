@@ -209,7 +209,7 @@ struct RTCPMessage {
     init?(data: Data, clock: Int) {
         var ptr = data.startIndex
         guard data[ptr] & 0b11000000 == 0b10000000 else {  // version should be 2
-            print("RTCP packet version is not 2")
+            print("RTCP packet version is not 2 \(data.map({ String(format: "%02hhx", $0) }).joined().uppercased())")
             return nil
         }
         let padding = data[ptr] & 0b00100000 != 0
