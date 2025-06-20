@@ -29,8 +29,8 @@ final class AVEncoder: @unchecked Sendable {
     // index of current file name
     private var swapping = false
     private var currentFile = 1
-    private var height: Int
-    private var width: Int
+    var height: Int
+    var width: Int
 
     // param set data
     private(set) var avcC: Data?

@@ -69,10 +69,13 @@ final class CameraServer: NSObject {
 
         print("Starting up camera server")
 
+        setupRotationManager()
+
         // Create capture device with video input
         let session = AVCaptureSession()
-        guard let dev = device,
-            let input = try? AVCaptureDeviceInput(device: dev),
+        guard let device,
+              let rotationManager,
+            let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input)
         else { return }
         session.addInput(input)
@@ -90,13 +93,20 @@ final class CameraServer: NSObject {
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
 
-        let dimensions = device?.activeFormat.formatDescription.presentationDimensions()
+        let dimensions = device.activeFormat.formatDescription.presentationDimensions()
+        let height, width: CGFloat
+        if (Int(rotationManager.videoRotationAngleForHorizonLevelCapture) / 90) % 2 == 1 {
+            // portrait
+            height = dimensions.width
+            width = dimensions.height
+        } else {
+            // landscape
+            height = dimensions.height
+            width = dimensions.width
+        }
 
         // Create an encoder
-        let encoder = AVEncoder(
-            height: Int(dimensions?.height ?? 480),
-            width: Int(dimensions?.width ?? 720)
-        )
+        let encoder = AVEncoder(height: Int(height), width: Int(width))
         encoder.encode { [weak self] data, pts in
             guard let self else { return }
             if let rtsp {
@@ -118,13 +128,33 @@ final class CameraServer: NSObject {
 
         self.session = session
         self.output = output
-
-        setupRotationManager()
     }
+
+    private var rotationObservation: NSKeyValueObservation? = nil
 
     private func setupRotationManager() {
         guard let device else { return }
         rotationManager = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        rotationObservation = rotationManager?
+            .observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) {
+                [weak self] obj, change in
+                guard let self,
+                    let encoder,
+                    let v = change.newValue
+                else {
+                    return
+                }
+                let dimensions = device.activeFormat.formatDescription.presentationDimensions()
+                if (Int(v) / 90) % 2 == 1 {
+                    // portrait
+                    encoder.height = Int(dimensions.width)
+                    encoder.width = Int(dimensions.height)
+                } else {
+                    // landscape
+                    encoder.height = Int(dimensions.height)
+                    encoder.width = Int(dimensions.width)
+                }
+            }
     }
 
     func shutdown() {
