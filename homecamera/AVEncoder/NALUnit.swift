@@ -32,8 +32,8 @@ final class NALUnit {
     var data: Data {
         Data(bytes: start, count: length)
     }
-    private(set) var start: UnsafePointer<UInt8>
-    private(set) var length: Int = 0
+    let start: UnsafePointer<UInt8>
+    let length: Int
 
     // Bitstream access
     private var idx: Int = 0
