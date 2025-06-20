@@ -9,7 +9,7 @@
 import AVFoundation
 import Combine
 import Foundation
-import SwiftUI
+import UIKit
 
 @Observable
 final class CameraServer: NSObject {
@@ -161,20 +161,16 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         // Calculate rotated dimensions
         let degrees = rotationManager?.videoRotationAngleForHorizonLevelCapture ?? 0
         let normalizedDegrees = Int(degrees) % 360
-        // let radians = degrees * .pi / 180
-        // let isPortrait = abs(sin(radians)) > abs(cos(radians))
         let (width, height): (Int, Int)
         switch normalizedDegrees {
         case 90, 270:
             // 90° and 270° rotations swap dimensions
             width = originalHeight
             height = originalWidth
-        case 180:
-            // 180° rotation keeps same dimensions
-            width = originalWidth
-            height = originalHeight
         default:
-            // 0° or other angles
+            // 180° rotation keeps same dimensions
+            // TODO: don't rotate if it's already at 0°
+            // 0° or other angles keeps same dimensions
             width = originalWidth
             height = originalHeight
         }
@@ -294,63 +290,5 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         guard bufferStatus == noErr, let newSampleBuffer else { return }
 
         encoder?.encode(frame: newSampleBuffer)
-    }
-}
-
-struct CameraPreview: UIViewRepresentable {
-    class VideoPreviewView: UIView {
-        override class var layerClass: AnyClass {
-            AVCaptureVideoPreviewLayer.self
-        }
-
-        var videoPreviewLayer: AVCaptureVideoPreviewLayer? {
-            layer as? AVCaptureVideoPreviewLayer
-        }
-    }
-
-    let session: AVCaptureSession?
-
-    func makeUIView(context: Context) -> VideoPreviewView {
-        let view = VideoPreviewView()
-        view.videoPreviewLayer?.videoGravity = .resizeAspect
-        view.videoPreviewLayer?.session = session
-        return view
-    }
-
-    func updateUIView(_ view: VideoPreviewView, context: Context) {}
-}
-
-struct CameraPreview2: UIViewRepresentable {
-    class VideoPreviewView: UIView {
-        override class var layerClass: AnyClass {
-            AVSampleBufferDisplayLayer.self
-        }
-
-        private var cancellable: AnyCancellable?
-
-        @MainActor
-        var sampleBufferLayer: AVSampleBufferDisplayLayer? {
-            layer as? AVSampleBufferDisplayLayer
-        }
-
-        func setup(pipeline: PassthroughSubject<CMSampleBuffer, Never>) {
-            cancellable?.cancel()
-            cancellable = pipeline.receive(on: RunLoop.main)
-                .sink { buffer in
-                    self.sampleBufferLayer?.sampleBufferRenderer.enqueue(buffer)
-                }
-        }
-    }
-
-    let pipeline: PassthroughSubject<CMSampleBuffer, Never>
-
-    func makeUIView(context: Context) -> VideoPreviewView {
-        let view = VideoPreviewView()
-        view.setup(pipeline: pipeline)
-        return view
-    }
-
-    func updateUIView(_ view: VideoPreviewView, context: Context) {
-        view.setup(pipeline: pipeline)
     }
 }
