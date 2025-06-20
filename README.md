@@ -12,5 +12,6 @@ The original code is based on [a server from GDCL](http://www.gdcl.co.uk/2013/02
 - Support for Embedded (Interleaved) Binary Data ([RFC 2326, 10.12](https://datatracker.ietf.org/doc/html/rfc2326#section-10.12))
 - Partial support for RTCP parsing
 - Add AVSampleBufferDisplayLayer based UI preview (vs AVCaptureVideoPreviewLayer)
+- Add CoreGraphics based overlay to video feed
 - Add client connection status to UI
 - Add camera switching to UI

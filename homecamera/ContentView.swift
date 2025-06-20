@@ -36,6 +36,27 @@ struct ConnectionView: View {
     }
 }
 
+struct BatterySaverToolbarItem: ToolbarContent {
+    @State
+    private var lastBrightness: CGFloat? = nil
+
+    var body: some ToolbarContent {
+        ToolbarItem {
+            Button {
+                if let lastBrightness {
+                    UIScreen.main.brightness = lastBrightness
+                    self.lastBrightness = nil
+                } else {
+                    self.lastBrightness = UIScreen.main.brightness
+                    UIScreen.main.brightness = 0
+                }
+            } label: {
+                Label("Battery Saver", systemImage: "powersleep")
+            }
+        }
+    }
+}
+
 struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
@@ -77,43 +98,41 @@ struct ContentView: View {
                         .disabled(true)
                     }
                 }
-                ToolbarItem {
-                    Button {
-                        UIScreen.main.brightness = 0
-                    } label: {
-                        Label("Battery Saver", systemImage: "powersleep")
-                    }
-                }
-                ToolbarItem {
-                    Menu {
-                        Picker(
-                            "Camera",
-                            selection: .init(
-                                get: {
-                                    cameraServer.device?.uniqueID
-                                },
-                                set: { newValue in
-                                    if let newValue {
-                                        cameraServer.device = AVCaptureDevice(uniqueID: newValue)
-                                    } else {
-                                        cameraServer.device = nil
+                BatterySaverToolbarItem()
+                if cameraServer.deviceDiscovery.devices.count > 1 {
+                    ToolbarItem {
+                        Menu {
+                            Picker(
+                                "Camera",
+                                selection: .init(
+                                    get: {
+                                        cameraServer.device?.uniqueID
+                                    },
+                                    set: { newValue in
+                                        if let newValue {
+                                            cameraServer.device = AVCaptureDevice(
+                                                uniqueID: newValue
+                                            )
+                                        } else {
+                                            cameraServer.device = nil
+                                        }
                                     }
+                                )
+                            ) {
+                                Text("Select Camera").tag(nil as String?)
+                                    .selectionDisabled()
+                                ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
+                                    device in
+                                    Text(device.localizedName).tag(device.uniqueID)
+                                        .selectionDisabled(!device.isConnected)
                                 }
-                            )
-                        ) {
-                            Text("Select Camera").tag(nil as String?)
-                                .selectionDisabled()
-                            ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
-                                device in
-                                Text(device.localizedName).tag(device.uniqueID)
-                                    .selectionDisabled(!device.isConnected)
                             }
+                        } label: {
+                            Label(
+                                "Camera",
+                                systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill"
+                            )
                         }
-                    } label: {
-                        Label(
-                            "Camera",
-                            systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill"
-                        )
                     }
                 }
             }

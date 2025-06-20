@@ -194,6 +194,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
         let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
 
+        // TODO: use RTSP ANNOUNCE to change dimensions on rotation?
         // Calculate rotated dimensions
         let degrees = rotationManager?.videoRotationAngleForHorizonLevelCapture ?? 0
         let normalizedDegrees = Int(degrees) % 360
