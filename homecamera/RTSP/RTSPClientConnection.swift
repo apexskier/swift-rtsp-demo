@@ -542,7 +542,10 @@ class RTSPClientConnection {
             ntpBase = UInt64(interval * Double(1 << 32))
         }
         let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
-        packet.replace(at: packet.startIndex.advanced(by: 4), with: UInt32(rtp).bigEndian)
+        packet.replace(
+            at: packet.startIndex.advanced(by: 4),
+            with: UInt32(truncatingIfNeeded: rtp).bigEndian
+        )
 
         packet.replace(at: packet.startIndex.advanced(by: 8), with: ssrc.bigEndian)
     }
