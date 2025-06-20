@@ -5,6 +5,7 @@ import Foundation
 // RFC 2326
 struct RTSPMessage {
     let command: String
+    let commandParameters: [String]
     private let sequence: Int
     let headers: [String: String]
     let body: String?
@@ -22,13 +23,14 @@ struct RTSPMessage {
             return nil
         }
         var msgLines = msg.components(separatedBy: "\r\n")
-        guard msgLines.count > 1,
-            let request = msgLines.removeFirst().components(separatedBy: " ").first
-        else {
-            print("msg parse error: no request line")
+        guard msgLines.count > 1 else {
+            print("msg parse error: no headers")
             return nil
         }
-        self.command = request
+        var commandParts = msgLines.removeFirst().components(separatedBy: .whitespaces)
+        let command = commandParts.removeFirst()
+        self.command = command
+        self.commandParameters = commandParts
         self.headers = [String: String](
             uniqueKeysWithValues: msgLines.compactMap({ line -> (String, String)? in
                 let parts = line.split(separator: ":", maxSplits: 1)
