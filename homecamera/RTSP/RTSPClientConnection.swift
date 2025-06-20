@@ -49,7 +49,7 @@ class RTSPClientConnection {
     private var rls: CFRunLoopSource?
     private var session: String?
     private var state: ServerState = .idle
-    private var packets: Int = 0  // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
+    private var packets: Int = 0
     private var sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
     private var bytesSent: Int = 0
     private var ssrc: UInt32 = 0
