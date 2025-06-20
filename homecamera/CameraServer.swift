@@ -77,7 +77,7 @@ final class CameraServer: NSObject {
         else { return }
         session.addInput(input)
 
-        // Create an output for YUV output with self as delegate
+        // Create an output with self as delegate
         captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(self, queue: captureQueue)
@@ -90,8 +90,13 @@ final class CameraServer: NSObject {
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
 
+        let dimensions = device?.activeFormat.formatDescription.presentationDimensions()
+
         // Create an encoder
-        let encoder = AVEncoder(height: 480, width: 720)
+        let encoder = AVEncoder(
+            height: Int(dimensions?.height ?? 480),
+            width: Int(dimensions?.width ?? 720)
+        )
         encoder.encode { [weak self] data, pts in
             guard let self else { return }
             if let rtsp {
