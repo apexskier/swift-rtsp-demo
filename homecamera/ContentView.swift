@@ -67,22 +67,22 @@ struct CameraPickerToolbarItem: ToolbarContent {
                     "Camera",
                     selection: .init(
                         get: {
-                            cameraServer.device?.uniqueID
+                            cameraServer.videoDevice?.uniqueID
                         },
                         set: { newValue in
                             if let newValue {
-                                cameraServer.device = AVCaptureDevice(
+                                cameraServer.videoDevice = AVCaptureDevice(
                                     uniqueID: newValue
                                 )
                             } else {
-                                cameraServer.device = nil
+                                cameraServer.videoDevice = nil
                             }
                         }
                     )
                 ) {
                     Text("Select Camera").tag(nil as String?)
                         .selectionDisabled()
-                    ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
+                    ForEach(cameraServer.videoDeviceDiscovery.devices, id: \.uniqueID) {
                         device in
                         Text(device.localizedName)
                             .tag(device.uniqueID)
@@ -141,7 +141,7 @@ struct ContentView: View {
                     }
                 }
                 BatterySaverToolbarItem()
-                if cameraServer.deviceDiscovery.devices.count > 1 {
+                if cameraServer.videoDeviceDiscovery.devices.count > 1 {
                     CameraPickerToolbarItem(cameraServer: cameraServer)
                 }
             }

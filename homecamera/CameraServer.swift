@@ -19,7 +19,7 @@ final class CameraServer: NSObject {
     let pipeline = PassthroughSubject<CMSampleBuffer, Never>()
 
     var session: AVCaptureSession? = nil
-    let deviceDiscovery = AVCaptureDevice.DiscoverySession(
+    let videoDeviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
             .builtInWideAngleCamera,
             .builtInUltraWideCamera,
@@ -37,12 +37,12 @@ final class CameraServer: NSObject {
         mediaType: .video,
         position: .unspecified
     )
-    var device = AVCaptureDevice.default(for: .video) {
+    var videoDevice = AVCaptureDevice.default(for: .video) {
         didSet {
             guard
                 let session,
-                let device,
-                let input = try? AVCaptureDeviceInput(device: device)
+                let videoDevice,
+                let input = try? AVCaptureDeviceInput(device: videoDevice)
             else { return }
             session.beginConfiguration()
             defer {
@@ -56,7 +56,7 @@ final class CameraServer: NSObject {
         }
     }
     private var rotationManager: AVCaptureDevice.RotationCoordinator? = nil
-    private var output: AVCaptureVideoDataOutput? = nil
+    private var videoOutput: AVCaptureVideoDataOutput? = nil
     private var captureQueue: DispatchQueue? = nil
     private var encoder: AVEncoder? = nil
     var rtsp: RTSPServer? = nil
@@ -73,27 +73,27 @@ final class CameraServer: NSObject {
 
         // Create capture device with video input
         let session = AVCaptureSession()
-        guard let device,
+        guard let videoDevice,
             let rotationManager,
-            let input = try? AVCaptureDeviceInput(device: device),
+            let input = try? AVCaptureDeviceInput(device: videoDevice),
             session.canAddInput(input)
         else { return }
         session.addInput(input)
 
         // Create an output with self as delegate
         captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
-        let output = AVCaptureVideoDataOutput()
-        output.setSampleBufferDelegate(self, queue: captureQueue)
-        output.videoSettings = [
+        let videoOutput = AVCaptureVideoDataOutput()
+        videoOutput.setSampleBufferDelegate(self, queue: captureQueue)
+        videoOutput.videoSettings = [
             // TODO: I think this is inefficient since H246 doesn't support it directly and it's converting internally. Saw this in the docs somewhere.
             // I'm doing this now to share memory with a CGContext to draw directly into it
             kCVPixelBufferPixelFormatTypeKey as String:
                 kCVPixelFormatType_32BGRA
         ]
-        guard session.canAddOutput(output) else { return }
-        session.addOutput(output)
+        guard session.canAddOutput(videoOutput) else { return }
+        session.addOutput(videoOutput)
 
-        let dimensions = device.activeFormat.formatDescription.presentationDimensions()
+        let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
         let height: CGFloat
         let width: CGFloat
         if (Int(rotationManager.videoRotationAngleForHorizonLevelCapture) / 90) % 2 == 1 {
@@ -128,14 +128,14 @@ final class CameraServer: NSObject {
         session.startRunning()
 
         self.session = session
-        self.output = output
+        self.videoOutput = videoOutput
     }
 
     private var rotationObservation: NSKeyValueObservation? = nil
 
     private func setupRotationManager() {
-        guard let device else { return }
-        rotationManager = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        guard let videoDevice else { return }
+        rotationManager = AVCaptureDevice.RotationCoordinator(device: videoDevice, previewLayer: nil)
         rotationObservation = rotationManager?
             .observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) {
                 [weak self] obj, change in
@@ -145,7 +145,7 @@ final class CameraServer: NSObject {
                 else {
                     return
                 }
-                let dimensions = device.activeFormat.formatDescription.presentationDimensions()
+                let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
                 if (Int(v) / 90) % 2 == 1 {
                     // portrait
                     encoder.height = Int(dimensions.width)
@@ -166,7 +166,7 @@ final class CameraServer: NSObject {
         self.rtsp = nil
         encoder?.shutdown()
         self.encoder = nil
-        self.output = nil
+        self.videoOutput = nil
         self.captureQueue = nil
     }
 
