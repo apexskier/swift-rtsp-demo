@@ -12,7 +12,7 @@ private struct EncodedFrame {
     let frame: [Data]
 }
 
-class AVEncoder {
+final class AVEncoder: @unchecked Sendable {
     // MARK: - Properties
 
     // initial writer, used to obtain SPS/PPS from header

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C582630C2E05B2D700510652 /* README.md in Sources */ = {isa = PBXBuildFile; fileRef = C582630A2E05B2D500510652 /* README.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C5F17EB02DF887A100A17E3F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C582630A2E05B2D500510652 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		C5F17E9E2DF887A000A17E3F /* homecamera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = homecamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5F17EAF2DF887A100A17E3F /* homecameraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = homecameraTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5F17EB92DF887A100A17E3F /* homecameraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = homecameraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -94,6 +99,7 @@
 				C5F17EB22DF887A100A17E3F /* homecameraTests */,
 				C5F17EBC2DF887A100A17E3F /* homecameraUITests */,
 				C5F17E9F2DF887A000A17E3F /* Products */,
+				C582630A2E05B2D500510652 /* README.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -252,6 +258,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C582630C2E05B2D700510652 /* README.md in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
