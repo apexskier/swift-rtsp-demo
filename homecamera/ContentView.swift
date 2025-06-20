@@ -66,7 +66,7 @@ struct ContentView: View {
                     if let urlString = cameraServer.getURL(),
                         let url = URL(string: urlString)
                     {
-                        ShareLink(item: url, preview: SharePreview("RTSP Server URL")) {
+                        ShareLink(item: url) {
                             Label("Copy URL", systemImage: "network")
                         }
                     } else {
