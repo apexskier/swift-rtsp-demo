@@ -9,8 +9,6 @@
 
 import Foundation
 
-// MARK: - NALUnit
-
 final class NALUnit {
     enum NALType: UInt8 {
         case slice = 1
@@ -137,8 +135,6 @@ final class NALUnit {
     }
 }
 
-// MARK: - SeqParamSet
-
 struct SeqParamSet {
     let frameBits: Int
     let cx: Int
@@ -251,8 +247,6 @@ extension NALUnit {
     }
 }
 
-// MARK: - SliceHeader
-
 private struct SliceHeader {
     let framenum: Int
     private let bField: Bool
@@ -305,8 +299,6 @@ private struct SliceHeader {
     }
 }
 
-// MARK: - avcCHeader
-
 struct AVCCHeader {
     let lengthSize: Int
     let sps: NALUnit
@@ -344,8 +336,6 @@ struct AVCCHeader {
         }
     }
 }
-
-// MARK: - POCState
 
 final class POCState {
     private var prevLSB: Int = 0

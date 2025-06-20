@@ -65,6 +65,9 @@ class RTSPClientConnection {
     private let clock = 90000  // RTP clock rate for H264
     private let serverPort: UInt16 = 6971
     private(set) var sourceDescription: String? = nil
+    private let selfQueue = DispatchQueue(
+        label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
+    )
 
     public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
@@ -347,63 +350,62 @@ class RTSPClientConnection {
     }
 
     private func createSession(portRTP: Int, portRTCP: Int) {
-        objc_sync_enter(self)
-        defer { objc_sync_exit(self) }
+        selfQueue.sync {
+            guard let socket else { return }
 
-        guard let socket else { return }
+            guard let data = CFSocketCopyPeerAddress(socket) else {
+                fatalError("No peer address for socket")
+            }
+            var paddr = (data as Data).read(as: sockaddr_in.self)
 
-        guard let data = CFSocketCopyPeerAddress(socket) else {
-            fatalError("No peer address for socket")
-        }
-        var paddr = (data as Data).read(as: sockaddr_in.self)
+            paddr.sin_port = in_port_t(UInt16(portRTP).bigEndian)
+            guard let addrRTP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
+                fatalError("Failed to create RTP address")
+            }
+            guard let socketRTP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
+            else {
+                fatalError("Failed to create RTP socket")
+            }
 
-        paddr.sin_port = in_port_t(UInt16(portRTP).bigEndian)
-        guard let addrRTP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
-            fatalError("Failed to create RTP address")
-        }
-        guard let socketRTP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
-        else {
-            fatalError("Failed to create RTP socket")
-        }
+            paddr.sin_port = in_port_t(UInt16(portRTCP).bigEndian)
+            guard let addrRTCP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
+                fatalError("Failed to create RTCP address")
+            }
+            guard
+                let socketRTCP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
+            else {
+                fatalError("Failed to create RTCP socket")
+            }
 
-        paddr.sin_port = in_port_t(UInt16(portRTCP).bigEndian)
-        guard let addrRTCP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
-            fatalError("Failed to create RTCP address")
-        }
-        guard let socketRTCP = CFSocketCreate(nil, PF_INET, SOCK_DGRAM, IPPROTO_UDP, 0, nil, nil)
-        else {
-            fatalError("Failed to create RTCP socket")
-        }
-
-        self.sessionConnection = .udp(
-            RTSPSessionUDP(
-                addressRTP: addrRTP,
-                socketRTP: socketRTP,
-                addressRTCP: addrRTCP,
-                socketRTCP: socketRTCP
+            self.sessionConnection = .udp(
+                RTSPSessionUDP(
+                    addressRTP: addrRTP,
+                    socketRTP: socketRTP,
+                    addressRTCP: addrRTCP,
+                    socketRTCP: socketRTCP
+                )
             )
-        )
 
-        flagValidSession()
+            flagValidSession()
 
-        print(
-            "Started session \(self.session ?? "INVALID") with RTP port \(portRTP) and RTCP port \(portRTCP)"
-        )
+            print(
+                "Started session \(self.session ?? "INVALID") with RTP port \(portRTP) and RTCP port \(portRTCP)"
+            )
+        }
     }
 
     private func createInterleavedSession(channelRTP: UInt8, channelRTCP: UInt8) {
-        objc_sync_enter(self)
-        defer { objc_sync_exit(self) }
+        selfQueue.sync {
+            guard socket != nil else { return }
 
-        guard socket != nil else { return }
+            self.sessionConnection = .interleaved(
+                .init(channelRTP: channelRTP, channelRTCP: channelRTCP)
+            )
 
-        self.sessionConnection = .interleaved(
-            .init(channelRTP: channelRTP, channelRTCP: channelRTCP)
-        )
+            flagValidSession()
 
-        flagValidSession()
-
-        print("Started interleaved session \(self.session ?? "INVALID")")
+            print("Started interleaved session \(self.session ?? "INVALID")")
+        }
     }
 
     private func flagValidSession() {
@@ -458,7 +460,6 @@ class RTSPClientConnection {
         self.bytesReported = 0
     }
 
-    // MARK: - Video Data
     func onVideoData(_ data: [Data], time pts: Double) {
         guard state == .playing else { return }
         let maxSinglePacket = maxPacketSize - rtpHeaderSize
@@ -572,62 +573,66 @@ class RTSPClientConnection {
     }
 
     private func sendPacket(_ packet: Data) {
-        objc_sync_enter(self)
-        defer { objc_sync_exit(self) }
-
-        guard let sessionConnection else { return }
-
-        switch sessionConnection {
-        case .udp(let udpSession):
-            CFSocketSendData(udpSession.socketRTP, udpSession.addressRTP, packet as CFData, 0)
-        case .interleaved(let interleavedSession):
-            CFSocketSendData(
-                socket,
-                address,
-                Self.interleavePacket(
-                    packet,
-                    channel: interleavedSession.channelRTP
-                ) as CFData,
-                0
-            )
-        }
-
-        packets += 1
-        bytesSent += packet.count
-
-        let now = Date()
-        if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
-            var buf = Data(capacity: 7 * MemoryLayout<UInt32>.size)
-            buf += [
-                0x80,  // version
-                200,  // type == SR
-                0,  // empty
-                6,  // length (count of uint32_t minus 1)
-            ]
-            buf.append(value: ssrc.bigEndian)
-            buf.append(value: UInt64(ntpBase).bigEndian)
-            buf.append(value: UInt32(rtpBase).bigEndian)
-            buf.append(value: UInt32(packets - packetsReported).bigEndian)
-            buf.append(value: UInt32(bytesSent - bytesReported).bigEndian)
+        selfQueue.sync {
+            guard let sessionConnection else { return }
 
             switch sessionConnection {
             case .udp(let udpSession):
-                CFSocketSendData(udpSession.socketRTCP, udpSession.addressRTCP, buf as CFData, 0)
+                CFSocketSendData(udpSession.socketRTP, udpSession.addressRTP, packet as CFData, 0)
             case .interleaved(let interleavedSession):
                 CFSocketSendData(
                     socket,
                     address,
                     Self.interleavePacket(
-                        buf,
-                        channel: interleavedSession.channelRTCP
+                        packet,
+                        channel: interleavedSession.channelRTP
                     ) as CFData,
                     0
                 )
             }
 
-            sentRTCP = now
-            packetsReported = packets
-            bytesReported = bytesSent
+            packets += 1
+            bytesSent += packet.count
+
+            let now = Date()
+            if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
+                var buf = Data(capacity: 7 * MemoryLayout<UInt32>.size)
+                buf += [
+                    0x80,  // version
+                    200,  // type == SR
+                    0,  // empty
+                    6,  // length (count of uint32_t minus 1)
+                ]
+                buf.append(value: ssrc.bigEndian)
+                buf.append(value: UInt64(ntpBase).bigEndian)
+                buf.append(value: UInt32(rtpBase).bigEndian)
+                buf.append(value: UInt32(packets - packetsReported).bigEndian)
+                buf.append(value: UInt32(bytesSent - bytesReported).bigEndian)
+
+                switch sessionConnection {
+                case .udp(let udpSession):
+                    CFSocketSendData(
+                        udpSession.socketRTCP,
+                        udpSession.addressRTCP,
+                        buf as CFData,
+                        0
+                    )
+                case .interleaved(let interleavedSession):
+                    CFSocketSendData(
+                        socket,
+                        address,
+                        Self.interleavePacket(
+                            buf,
+                            channel: interleavedSession.channelRTCP
+                        ) as CFData,
+                        0
+                    )
+                }
+
+                sentRTCP = now
+                packetsReported = packets
+                bytesReported = bytesSent
+            }
         }
     }
 

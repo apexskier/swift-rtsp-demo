@@ -10,8 +10,8 @@ class RTSPServer {
     private(set) var configData: Data
     var bitrate: Int = 0
     let port: UInt16 = 554
+    private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).RTSPServer.self")
 
-    // MARK: - Initializer
     init?(configData: Data) {
         self.configData = configData
         var context = CFSocketContext(
@@ -67,50 +67,46 @@ class RTSPServer {
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
     }
 
-    // MARK: - Accept
     private func onAccept(childHandle: CFSocketNativeHandle) {
-        if let conn = RTSPClientConnection(socketHandle: childHandle, server: self) {
-            objc_sync_enter(self)
+        guard let conn = RTSPClientConnection(socketHandle: childHandle, server: self) else {
+            return
+        }
+        selfQueue.sync {
             print("Client connected")
             connections.append(conn)
-            objc_sync_exit(self)
         }
     }
 
-    // MARK: - Video Data
     func onVideoData(_ data: [Data], time: Double) {
-        objc_sync_enter(self)
-        for conn in connections {
-            conn.onVideoData(data, time: time)
+        selfQueue.sync {
+            for conn in connections {
+                conn.onVideoData(data, time: time)
+            }
         }
-        objc_sync_exit(self)
     }
 
-    // MARK: - Shutdown Connection
     func shutdownConnection(_ conn: RTSPClientConnection) {
-        objc_sync_enter(self)
-        print("Client disconnected")
-        if let idx = connections.firstIndex(where: { $0 === conn }) {
-            connections.remove(at: idx)
+        selfQueue.sync {
+            print("Client disconnected")
+            if let idx = connections.firstIndex(where: { $0 === conn }) {
+                connections.remove(at: idx)
+            }
         }
-        objc_sync_exit(self)
     }
 
-    // MARK: - Shutdown Server
     func shutdownServer() {
-        objc_sync_enter(self)
-        for conn in connections {
-            conn.shutdown()
+        selfQueue.sync {
+            for conn in connections {
+                conn.shutdown()
+            }
+            connections.removeAll(keepingCapacity: true)
+            if let listener {
+                CFSocketInvalidate(listener)
+                self.listener = nil
+            }
         }
-        connections.removeAll(keepingCapacity: true)
-        if let listener {
-            CFSocketInvalidate(listener)
-            self.listener = nil
-        }
-        objc_sync_exit(self)
     }
 
-    // MARK: - IP Address
     static func getIPAddress() -> String? {
         var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
