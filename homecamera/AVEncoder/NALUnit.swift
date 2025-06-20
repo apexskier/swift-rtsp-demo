@@ -29,33 +29,26 @@ final class NALUnit {
         }
     }
 
-    var data: Data {
-        Data(bytes: start, count: length)
-    }
-    let start: UnsafePointer<UInt8>
-    let length: Int
+    let data: Data
 
     // Bitstream access
-    private var idx: Int = 0
+    private var idx: Data.Index
     private var nBits: Int = 0
     private var byte: UInt8 = 0
     private var cZeros: Int = 0
 
     init(data: Data) {
-        let bytes = data.withUnsafeBytes {
-            $0.baseAddress!.assumingMemoryBound(to: UInt8.self)
-        }
-        self.start = bytes
-        self.length = data.count
+        self.data = data
+        self.idx = data.startIndex
         self.resetBitstream()
     }
 
     func type() -> NALType {
-        NALType(byte: start.pointee)
+        NALType(byte: data[data.startIndex])
     }
 
     func resetBitstream() {
-        self.idx = 0
+        self.idx = data.startIndex
         self.nBits = 0
         self.cZeros = 0
     }
@@ -80,13 +73,13 @@ final class NALUnit {
 
     // get the next byte, removing emulation prevention bytes
     func getBYTE() -> UInt8 {
-        guard idx < self.length else { return 0 }
-        let b = start.advanced(by: idx).pointee
+        guard idx < data.endIndex else { return 0 }
+        let b = data[idx]
         idx += 1
         // to avoid start-code emulation, a byte 0x03 is inserted after any 00 00 pair. Discard that here.
         if b == 0 {
             cZeros += 1
-            if idx < self.length && cZeros == 2 && start.advanced(by: idx).pointee == 0x03 {
+            if idx < data.endIndex && cZeros == 2 && data[idx] == 0x03 {
                 idx += 1
                 cZeros = 0
             }
@@ -136,11 +129,11 @@ final class NALUnit {
     }
 
     func noMoreBits() -> Bool {
-        idx >= length && nBits == 0
+        idx >= data.endIndex && nBits == 0
     }
 
     func isRefPic() -> Bool {
-        (start.pointee & 0x60) != 0
+        (data[data.startIndex] & 0x60) != 0
     }
 }
 
