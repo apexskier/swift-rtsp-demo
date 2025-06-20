@@ -1,5 +1,5 @@
-import Foundation
 @preconcurrency import AVFoundation
+import Foundation
 
 // VideoEncoder: Handles AVAssetWriter setup and frame encoding for H.264 video
 final class VideoEncoder: Sendable {
