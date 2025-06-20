@@ -21,7 +21,7 @@ struct ConnectionView: View {
             Text(connection.sourceDescription ?? "unnamed")
             VStack {
                 if let jitter {
-                    Text("Jitter: \(String(format: "%.2f", jitter)) ms")
+                    Text("Jitter: \(String(format: "%.2f", jitter * 1000)) ms")
                 }
                 if let packetLoss {
                     Text("Packet Loss: \(String(format: "%.2f", packetLoss))%")
