@@ -212,7 +212,7 @@ struct RTCPMessage {
             print("RTCP packet version is not 2 \(data.map({ String(format: "%02hhx", $0) }).joined().uppercased())")
             return nil
         }
-        let padding = data[ptr] & 0b00100000 != 0
+        // let padding = data[ptr] & 0b00100000 != 0
         let count = data[ptr] & 0b00011111
         guard let packetType = PacketType(rawValue: data[ptr + 1]) else {
             print("Unsupported RTCP packet type: \(data[ptr + 1])")

@@ -1,8 +1,8 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 
 // VideoEncoder: Handles AVAssetWriter setup and frame encoding for H.264 video
-class VideoEncoder {
+final class VideoEncoder: Sendable {
     private let writer: AVAssetWriter!
     private let writerInput: AVAssetWriterInput
     let path: String
@@ -26,7 +26,7 @@ class VideoEncoder {
         writer.add(writerInput)
     }
 
-    func finishWithCompletionHandler(_ handler: @escaping () -> Void) {
+    func finishWithCompletionHandler(_ handler: @Sendable @escaping () -> Void) {
         writer.finishWriting(completionHandler: handler)
     }
 

@@ -11,13 +11,6 @@ import Foundation
 import SwiftUI
 import Combine
 
-let font = UIFont.systemFont(ofSize: 36)
-let fontAttributes = [
-    NSAttributedString.Key.font: font,
-    NSAttributedString.Key.foregroundColor: UIColor.white,
-    NSAttributedString.Key.backgroundColor: UIColor.black,
-]
-
 @Observable
 final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     // Singleton instance
@@ -87,6 +80,8 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(self, queue: captureQueue)
         output.videoSettings = [
+            // TODO: I think this is inefficient since H246 doesn't support it directly and it's converting internally. Saw this in the docs somewhere.
+            // I'm doing this now to share memory with a CGContext to draw directly into it
             kCVPixelBufferPixelFormatTypeKey as String:
                 kCVPixelFormatType_32BGRA
         ]
@@ -162,6 +157,13 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         }
 
         UIGraphicsPushContext(context)
+        // TODO: don't recreate, doing this because of concurrency warnings
+        let font = UIFont.systemFont(ofSize: 36)
+        let fontAttributes = [
+            NSAttributedString.Key.font: font,
+            NSAttributedString.Key.foregroundColor: UIColor.white,
+            NSAttributedString.Key.backgroundColor: UIColor.black,
+        ]
         let timestamp = sampleBuffer.presentationTimeStamp
         let d = Date(timeInterval: timestamp.seconds, since: firstCaptureTimestamp!)
         let string = NSAttributedString(
