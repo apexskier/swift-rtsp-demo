@@ -301,8 +301,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         context.restoreGState()
         UIGraphicsPopContext()
 
-        CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
-
         var timingInfo = CMSampleTimingInfo()
         CMSampleBufferGetSampleTimingInfo(sampleBuffer, at: 0, timingInfoOut: &timingInfo)
 
@@ -323,6 +321,8 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
             sampleBufferOut: &newSampleBuffer
         )
         guard bufferStatus == noErr, let newSampleBuffer else { return }
+
+        CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         encoder?.encode(frame: newSampleBuffer)
     }

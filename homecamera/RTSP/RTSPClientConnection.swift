@@ -50,6 +50,7 @@ class RTSPClientConnection {
     private var session: String?
     private var state: ServerState = .idle
     private var packets: Int = 0  // TODO: this should be randomized to start // https://en.wikipedia.org/wiki/Real-time_Transport_Protocol
+    private var sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
     private var bytesSent: Int = 0
     private var ssrc: UInt32 = 0
     private var bFirst: Bool = true
@@ -448,6 +449,7 @@ class RTSPClientConnection {
         self.state = .setup
         self.ssrc = UInt32.random(in: UInt32.min...UInt32.max)
         self.packets = 0
+        self.sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
         self.bytesSent = 0
         self.rtpBase = 0
 
@@ -530,7 +532,10 @@ class RTSPClientConnection {
         packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
 
-        packet.replace(at: 2, with: UInt16(truncatingIfNeeded: packets).bigEndian)
+        packet.replace(
+            at: 2,
+            with: UInt16(truncatingIfNeeded: Int(sequenceNumber) + packets).bigEndian
+        )
 
         while rtpBase == 0 {
             rtpBase = UInt64(UInt32.random(in: UInt32.min...UInt32.max))
