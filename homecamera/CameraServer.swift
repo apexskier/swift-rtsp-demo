@@ -24,9 +24,9 @@ final class CameraServer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             .builtInWideAngleCamera,
             .builtInUltraWideCamera,
             .builtInTelephotoCamera,
-            .builtInDualCamera,
-            .builtInDualWideCamera,
-            .builtInTripleCamera,
+            // .builtInDualCamera,
+            // .builtInDualWideCamera,
+            // .builtInTripleCamera,
             .continuityCamera,
 
             // #if os(macOS)
