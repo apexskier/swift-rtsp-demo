@@ -8,6 +8,34 @@
 import AVFoundation
 import SwiftUI
 
+struct ConnectionView: View {
+    var connection: RTSPClientConnection
+
+    @State
+    private var jitter: Double? = nil
+    @State
+    private var packetLoss: Double? = nil
+
+    var body: some View {
+        VStack {
+            Text(connection.sourceDescription ?? "unnamed")
+            VStack {
+                if let jitter {
+                    Text("Jitter: \(String(format: "%.2f", jitter)) ms")
+                }
+                if let packetLoss {
+                    Text("Packet Loss: \(String(format: "%.2f", packetLoss))%")
+                }
+            }
+            .font(.footnote)
+        }
+        .onReceive(connection.receiverReports) { block in
+            jitter = block.jitter
+            packetLoss = block.fractionLost
+        }
+    }
+}
+
 struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
@@ -28,7 +56,7 @@ struct ContentView: View {
                 VStack {
                     if let rtsp = cameraServer.rtsp {
                         ForEach(rtsp.connections, id: \.socket) { connection in
-                            Text(connection.sourceDescription ?? "unnamed")
+                            ConnectionView(connection: connection)
                         }
                     }
                 }
