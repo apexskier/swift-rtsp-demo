@@ -231,6 +231,8 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
             &outputBuffer
         )
         guard status == kCVReturnSuccess, let outputBuffer else { return }
+        
+        CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         let rotatedImage: CIImage
         switch normalizedDegrees {
@@ -251,7 +253,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         )
         CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
         guard let baseAddress = CVPixelBufferGetBaseAddress(outputBuffer) else {
             CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
             return
