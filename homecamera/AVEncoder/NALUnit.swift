@@ -41,17 +41,13 @@ final class NALUnit {
     private var byte: UInt8 = 0
     private var cZeros: Int = 0
 
-    init(start: UnsafePointer<UInt8>, length: Int) {
-        self.start = start
-        self.length = length
-        self.resetBitstream()
-    }
-
-    convenience init(data: Data, offset: Int = 0, length: Int? = nil) {
+    init(data: Data) {
         let bytes = data.withUnsafeBytes {
             $0.baseAddress!.assumingMemoryBound(to: UInt8.self)
         }
-        self.init(start: bytes.advanced(by: offset), length: length ?? data.count)
+        self.start = bytes
+        self.length = data.count
+        self.resetBitstream()
     }
 
     func type() -> NALType {
@@ -335,7 +331,7 @@ struct AVCCHeader {
             p += 2
             if p + cThis > data.count { return nil }
             if i == 0 {
-                sps = NALUnit(data: data, offset: p, length: cThis)
+                sps = NALUnit(data: data[p..<p+cThis])
             }
             p = p.advanced(by: cThis)
         }
@@ -344,7 +340,7 @@ struct AVCCHeader {
         if cPPS > 0 {
             let cThis = Int(data[p + 1] << 8 | data[p + 2])
             p += 3
-            pps = NALUnit(data: data, offset: p, length: cThis)
+            pps = NALUnit(data: data[p..<p+cThis])
         } else {
             return nil
         }
