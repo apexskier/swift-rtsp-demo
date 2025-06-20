@@ -69,6 +69,8 @@ class RTSPClientConnection {
         label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
     )
 
+    private let videoStreamId = "streamid=1"
+
     public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
@@ -206,57 +208,65 @@ class RTSPClientConnection {
             ]
             response += sdp
         case "setup":
-            if let transport = msg.headers["transport"] {
-                let props = transport.components(separatedBy: ";")
-                var ports: [String]? = nil
-                for s in props {
-                    if s.hasPrefix("client_port=") {
-                        let val = String(s.dropFirst(12))
-                        ports = val.components(separatedBy: "-")
-                        break
-                    }
-                }
-
-                if let ports, ports.count == 2,
-                    let portRTP = Int(ports[0]),
-                    let portRTCP = Int(ports[1])
-                {
-                    createSession(portRTP: portRTP, portRTCP: portRTCP)
-                    if let session {
-                        response = msg.createResponse(code: 200, text: "OK")
-                        response += [
-                            "Session: \(session)",
-                            "Transport: RTP/AVP;unicast;client_port=\(portRTP)-\(portRTCP);server_port=6970-\(serverPort)",
-                        ]
-                    }
-                }
-
-                if response.isEmpty {
+            if let transport = msg.headers["transport"],
+                let firstParam = msg.commandParameters.first,
+                let url = URL(string: firstParam)
+            {
+                switch url.path() {
+                case "/\(videoStreamId)":
+                    let props = transport.components(separatedBy: ";")
+                    var ports: [String]? = nil
                     for s in props {
-                        if s.hasPrefix("interleaved=") {
+                        if s.hasPrefix("client_port=") {
                             let val = String(s.dropFirst(12))
-                            let channels = val.components(separatedBy: "-")
-                                .compactMap({ UInt8($0) })
-                            if let channelRTP = channels.first {
-                                let channelRTCP =
-                                    channels.count > 1 ? channels[1] : (channelRTP + 1)
+                            ports = val.components(separatedBy: "-")
+                            break
+                        }
+                    }
 
-                                createInterleavedSession(
-                                    channelRTP: channelRTP,
-                                    channelRTCP: channelRTCP
-                                )
+                    if let ports, ports.count == 2,
+                        let portRTP = Int(ports[0]),
+                        let portRTCP = Int(ports[1])
+                    {
+                        createSession(portRTP: portRTP, portRTCP: portRTCP)
+                        if let session {
+                            response = msg.createResponse(code: 200, text: "OK")
+                            response += [
+                                "Session: \(session)",
+                                "Transport: RTP/AVP;unicast;client_port=\(portRTP)-\(portRTCP);server_port=6970-\(serverPort)",
+                            ]
+                        }
+                    }
 
-                                if let session {
-                                    response = msg.createResponse(code: 200, text: "OK")
-                                    response += [
-                                        "Session: \(session)",
-                                        "Transport: RTP/AVP/TCP;unicast;interleaved=0-1",
-                                    ]
+                    if response.isEmpty {
+                        for s in props {
+                            if s.hasPrefix("interleaved=") {
+                                let val = String(s.dropFirst(12))
+                                let channels = val.components(separatedBy: "-")
+                                    .compactMap({ UInt8($0) })
+                                if let channelRTP = channels.first {
+                                    let channelRTCP =
+                                        channels.count > 1 ? channels[1] : (channelRTP + 1)
+
+                                    createInterleavedSession(
+                                        channelRTP: channelRTP,
+                                        channelRTCP: channelRTCP
+                                    )
+
+                                    if let session {
+                                        response = msg.createResponse(code: 200, text: "OK")
+                                        response += [
+                                            "Session: \(session)",
+                                            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1",
+                                        ]
+                                    }
+                                    break
                                 }
-                                break
                             }
                         }
                     }
+                default:
+                    print("unknown stream id in setup: \(url.path())")
                 }
             }
             if response.isEmpty {
@@ -329,6 +339,7 @@ class RTSPClientConnection {
             return String(cString: inet_ntoa(sockaddr.sin_addr))
         }
         let packets = (server.bitrate / (maxPacketSize * 8)) + 1
+        let videoPayloadType = 96
         return [
             "v=0",
             "o=- \(verid) \(verid) IN IP4 \(ipString)",
@@ -336,16 +347,16 @@ class RTSPClientConnection {
             "c=IN IP4 0.0.0.0",
             "t=0 0",
             "a=control:*",
-            "m=video 0 RTP/AVP 96",
+            "m=video 0 RTP/AVP \(videoPayloadType)",
             "b=TIAS:\(server.bitrate)",
             "a=maxprate:\(packets).0000",
-            "a=control:streamid=1",
-            "a=rtpmap:96 H264/\(clock)",
+            "a=control:\(videoStreamId)",
+            "a=rtpmap:\(videoPayloadType) H264/\(clock)",
             "a=mimetype:string;\"video/H264\"",
-            "a=framesize:96 \(cx)-\(cy)",
+            "a=framesize:\(videoPayloadType) \(cx)-\(cy)",
             "a=Width:integer;\(cx)",
             "a=Height:integer;\(cy)",
-            "a=fmtp:96 packetization-mode=1;profile-level-id=\(profileLevelID);sprop-parameter-sets=\(spsBase64),\(ppsBase64)",
+            "a=fmtp:\(videoPayloadType) packetization-mode=1;profile-level-id=\(profileLevelID);sprop-parameter-sets=\(spsBase64),\(ppsBase64)",
         ]
     }
 
@@ -529,6 +540,7 @@ class RTSPClientConnection {
         }
     }
 
+    // RFC 3550, 5.1
     private func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
         packet[packet.startIndex] = 0b10000000  // v=2
         packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
