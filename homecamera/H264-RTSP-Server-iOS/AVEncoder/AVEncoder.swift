@@ -54,6 +54,9 @@ class AVEncoder {
 
     // FIFO for frame times
     private var times: [Double] = []
+    private let timesQueue = DispatchQueue(
+        label: "\(Bundle.main.bundleIdentifier!).avencoder.times"
+    )
 
     // FIFO for frames awaiting time assigment
     private var frames: [EncodedFrame] = []
@@ -66,6 +69,8 @@ class AVEncoder {
     private(set) var bitspersecond = 0
     private var firstpts: Double = -1
 
+    private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.self")
+
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
     private let maxFilenameIndex = 5  // filenames "capture1.mp4" wraps at capture5.mp4
@@ -75,8 +80,10 @@ class AVEncoder {
         self.width = width
         let path = NSTemporaryDirectory().appending("params.mp4")
         headerWriter = VideoEncoder(path: path, height: height, width: width)
-        times = []
-        times.reserveCapacity(10)
+        timesQueue.sync {
+            times = []
+            times.reserveCapacity(10)
+        }
         currentFile = 1
         writer = VideoEncoder(path: makeFilename(), height: height, width: width)
     }
@@ -96,71 +103,71 @@ class AVEncoder {
     }
 
     func encode(frame sampleBuffer: CMSampleBuffer) {
-        objc_sync_enter(self)
-        if needParams {
-            // the avcC record is needed for decoding and it's not written to the file until
-            // completion. We get round that by writing the first frame to two files; the first
-            // file (containing only one frame) is then finished, so we can extract the avcC record.
-            // Only when we've got that do we start reading from the main file.
-            needParams = false
-            if headerWriter?.encodeFrame(sampleBuffer) == true {
-                headerWriter?
-                    .finishWithCompletionHandler { [weak self] in
-                        self?.onParamsCompletion()
-                    }
+        selfQueue.sync {
+            if needParams {
+                // the avcC record is needed for decoding and it's not written to the file until
+                // completion. We get round that by writing the first frame to two files; the first
+                // file (containing only one frame) is then finished, so we can extract the avcC record.
+                // Only when we've got that do we start reading from the main file.
+                needParams = false
+                if headerWriter?.encodeFrame(sampleBuffer) == true {
+                    headerWriter?
+                        .finishWithCompletionHandler { [weak self] in
+                            self?.onParamsCompletion()
+                        }
+                }
             }
         }
-        objc_sync_exit(self)
         let prestime = sampleBuffer.presentationTimeStamp
         let dPTS = Double(prestime.value) / Double(prestime.timescale)
-        objc_sync_enter(times)
-        times.append(dPTS)
-        objc_sync_exit(times)
-        objc_sync_enter(self)
-        // switch output files when we reach a size limit
-        // to avoid runaway storage use.
-        if !swapping {
-            let offset = try? inputFile?.offset()
-            let st = try? inputFile?.seekToEnd()
-            if let offset {
-                try? inputFile?.seek(toOffset: offset)
-            }
-            if let st, st > outputFileSwitchPoint {
-                swapping = true
-                let oldVideo = writer
-                // construct a new writer to the next filename
-                currentFile += 1
-                if currentFile > maxFilenameIndex { currentFile = 1 }
-                print("Swap to file \(currentFile)")
-                writer = VideoEncoder(path: makeFilename(), height: height, width: width)
-                // to do this seamlessly requires a few steps in the right order
-                // first, suspend the read source
-                readSource?.cancel()
-                // execute the next step as a block on the same queue, to be sure the suspend is done
-                readQueue?
-                    .async { [weak self] in
-                        // finish the file, writing moov, before reading any more from the file
-                        // since we don't yet know where the mdat ends
-                        self?.readSource = nil
-                        oldVideo?
-                            .finishWithCompletionHandler {
-                                self?.swapFiles(oldVideo?.path ?? "")
-                            }
-                    }
-            }
+        timesQueue.sync {
+            times.append(dPTS)
         }
-        _ = writer?.encodeFrame(sampleBuffer)
-        outputSampleBuffer?(sampleBuffer)
-        objc_sync_exit(self)
+        selfQueue.sync {
+            // switch output files when we reach a size limit
+            // to avoid runaway storage use.
+            if !swapping {
+                let offset = try? inputFile?.offset()
+                let st = try? inputFile?.seekToEnd()
+                if let offset {
+                    try? inputFile?.seek(toOffset: offset)
+                }
+                if let st, st > outputFileSwitchPoint {
+                    swapping = true
+                    let oldVideo = writer
+                    // construct a new writer to the next filename
+                    currentFile += 1
+                    if currentFile > maxFilenameIndex { currentFile = 1 }
+                    print("Swap to file \(currentFile)")
+                    writer = VideoEncoder(path: makeFilename(), height: height, width: width)
+                    // to do this seamlessly requires a few steps in the right order
+                    // first, suspend the read source
+                    readSource?.cancel()
+                    // execute the next step as a block on the same queue, to be sure the suspend is done
+                    readQueue?
+                        .async { [weak self] in
+                            // finish the file, writing moov, before reading any more from the file
+                            // since we don't yet know where the mdat ends
+                            self?.readSource = nil
+                            oldVideo?
+                                .finishWithCompletionHandler {
+                                    self?.swapFiles(oldVideo?.path ?? "")
+                                }
+                        }
+                }
+            }
+            _ = writer?.encodeFrame(sampleBuffer)
+            outputSampleBuffer?(sampleBuffer)
+        }
     }
 
     func shutdown() {
-        objc_sync_enter(self)
-        readSource = nil
-        headerWriter?.finishWithCompletionHandler { [weak self] in self?.headerWriter = nil }
-        writer?.finishWithCompletionHandler { [weak self] in self?.writer = nil }
-        // !! wait for these to finish before returning and delete temp files
-        objc_sync_exit(self)
+        selfQueue.sync {
+            readSource = nil
+            headerWriter?.finishWithCompletionHandler { [weak self] in self?.headerWriter = nil }
+            writer?.finishWithCompletionHandler { [weak self] in self?.writer = nil }
+            // !! wait for these to finish before returning and delete temp files
+        }
     }
 
     var bitsPerSecond: Int { bitspersecond }
@@ -356,14 +363,14 @@ class AVEncoder {
         for (n, f) in frames.enumerated() {
             let index = n == 0 ? frames.count - 1 : n - 1
             var pts: Double = 0
-            objc_sync_enter(times)
-            if times.count > 0 { pts = times[index] }
-            objc_sync_exit(times)
+            timesQueue.sync {
+                if times.count > 0 { pts = times[index] }
+            }
             deliverFrame(f.frame, withTime: pts)
         }
-        objc_sync_enter(times)
-        times.removeFirst(frames.count)
-        objc_sync_exit(times)
+        timesQueue.sync {
+            times.removeFirst(frames.count)
+        }
         frames.removeAll()
     }
 
@@ -381,12 +388,12 @@ class AVEncoder {
         if poc == 0 {
             processStoredFrames()
             var pts: Double = 0
-            objc_sync_enter(times)
-            if let first = times.first {
-                pts = first
-                times.removeFirst()
+            timesQueue.sync {
+                if let first = times.first {
+                    pts = first
+                    times.removeFirst()
+                }
             }
-            objc_sync_exit(times)
             if let pendingNALU {
                 deliverFrame(pendingNALU, withTime: pts)
             }
