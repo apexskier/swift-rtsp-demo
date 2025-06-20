@@ -38,9 +38,9 @@
 		C53C6AA52DF92697000B2755 /* Exceptions for "homecamera" folder in "homecameraTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AVEncoder/MP4Atom.swift,
+				AVEncoder/NALUnit.swift,
 				DataExtensions.swift,
-				"H264-RTSP-Server-iOS/AVEncoder/MP4Atom.swift",
-				"H264-RTSP-Server-iOS/AVEncoder/NALUnit.swift",
 			);
 			target = C5F17EAE2DF887A100A17E3F /* homecameraTests */;
 		};
