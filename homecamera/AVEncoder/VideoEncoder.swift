@@ -18,8 +18,8 @@ final class VideoEncoder: Sendable {
             AVVideoWidthKey: NSNumber(value: width),
             AVVideoHeightKey: NSNumber(value: height),
             AVVideoCompressionPropertiesKey: [
-                AVVideoAllowFrameReorderingKey: true
-            ]
+                AVVideoAllowFrameReorderingKey: false
+            ],
         ]
         writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         writerInput.expectsMediaDataInRealTime = true
