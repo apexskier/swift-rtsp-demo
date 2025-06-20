@@ -126,9 +126,6 @@ class RTSPClientConnection {
                 // - multiple RTCP packets
 
                 let data = allData[ptr...]
-                if ptr > 0 {
-                    print("processing additional data")
-                }
 
                 if var partialPacket {
                     partialPacket.data.append(contentsOf: data)
@@ -161,7 +158,7 @@ class RTSPClientConnection {
         } else {
             let len = handleRTSPPacket(allData)
             if len < allData.count {
-                print("additional data after RTSP packet")
+                print("additional data after RTSP packet (\(allData.count - len) bytes)")
             }
         }
     }
@@ -661,6 +658,7 @@ class RTSPClientConnection {
             CFSocketInvalidate(recvRTCP)
             self.recvRTCP = nil
         }
+        print("Tearing down session \(session ?? "INVALID")")
         session = nil
     }
 
