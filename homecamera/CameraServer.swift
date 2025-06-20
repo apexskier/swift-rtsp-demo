@@ -74,7 +74,7 @@ final class CameraServer: NSObject {
         // Create capture device with video input
         let session = AVCaptureSession()
         guard let device,
-              let rotationManager,
+            let rotationManager,
             let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input)
         else { return }
@@ -94,7 +94,8 @@ final class CameraServer: NSObject {
         session.addOutput(output)
 
         let dimensions = device.activeFormat.formatDescription.presentationDimensions()
-        let height, width: CGFloat
+        let height: CGFloat
+        let width: CGFloat
         if (Int(rotationManager.videoRotationAngleForHorizonLevelCapture) / 90) % 2 == 1 {
             // portrait
             height = dimensions.width
@@ -188,7 +189,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
             return
         }
 
-        CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
         let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
         let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
@@ -217,23 +218,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
             kCVPixelBufferIOSurfacePropertiesKey as String: [:],
         ]
 
-        // Use CIContext with metal for better performance
-        let context = CIContext(options: [.useSoftwareRenderer: false])
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-
-        var outputBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            pixelFormat,
-            attributes as CFDictionary,
-            &outputBuffer
-        )
-        guard status == kCVReturnSuccess, let outputBuffer else { return }
-        
-        CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
-
         let rotatedImage: CIImage
         switch normalizedDegrees {
         case 90:
@@ -245,12 +230,27 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         default:
             rotatedImage = ciImage.oriented(.up)
         }
-        context.render(
-            rotatedImage,
-            to: outputBuffer,
-            bounds: CGRect(x: 0, y: 0, width: width, height: height),
-            colorSpace: CGColorSpaceCreateDeviceRGB()
+
+        var outputBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            pixelFormat,
+            attributes as CFDictionary,
+            &outputBuffer
         )
+        guard status == kCVReturnSuccess, let outputBuffer else { return }
+        CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
+
+        // Use CIContext with metal for better performance
+        CIContext(options: [.useSoftwareRenderer: false])
+            .render(
+                rotatedImage,
+                to: outputBuffer,
+                bounds: CGRect(x: 0, y: 0, width: width, height: height),
+                colorSpace: CGColorSpaceCreateDeviceRGB()
+            )
         CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(outputBuffer) else {
