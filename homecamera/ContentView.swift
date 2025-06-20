@@ -57,6 +57,48 @@ struct BatterySaverToolbarItem: ToolbarContent {
     }
 }
 
+struct CameraPickerToolbarItem: ToolbarContent {
+    var cameraServer: CameraServer
+
+    var body: some ToolbarContent {
+        ToolbarItem {
+            Menu {
+                Picker(
+                    "Camera",
+                    selection: .init(
+                        get: {
+                            cameraServer.device?.uniqueID
+                        },
+                        set: { newValue in
+                            if let newValue {
+                                cameraServer.device = AVCaptureDevice(
+                                    uniqueID: newValue
+                                )
+                            } else {
+                                cameraServer.device = nil
+                            }
+                        }
+                    )
+                ) {
+                    Text("Select Camera").tag(nil as String?)
+                        .selectionDisabled()
+                    ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
+                        device in
+                        Text(device.localizedName)
+                            .tag(device.uniqueID)
+                            .selectionDisabled(!device.isConnected)
+                    }
+                }
+            } label: {
+                Label(
+                    "Camera",
+                    systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill"
+                )
+            }
+        }
+    }
+}
+
 struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
@@ -100,40 +142,7 @@ struct ContentView: View {
                 }
                 BatterySaverToolbarItem()
                 if cameraServer.deviceDiscovery.devices.count > 1 {
-                    ToolbarItem {
-                        Menu {
-                            Picker(
-                                "Camera",
-                                selection: .init(
-                                    get: {
-                                        cameraServer.device?.uniqueID
-                                    },
-                                    set: { newValue in
-                                        if let newValue {
-                                            cameraServer.device = AVCaptureDevice(
-                                                uniqueID: newValue
-                                            )
-                                        } else {
-                                            cameraServer.device = nil
-                                        }
-                                    }
-                                )
-                            ) {
-                                Text("Select Camera").tag(nil as String?)
-                                    .selectionDisabled()
-                                ForEach(cameraServer.deviceDiscovery.devices, id: \.uniqueID) {
-                                    device in
-                                    Text(device.localizedName).tag(device.uniqueID)
-                                        .selectionDisabled(!device.isConnected)
-                                }
-                            }
-                        } label: {
-                            Label(
-                                "Camera",
-                                systemImage: "arrow.trianglehead.2.clockwise.rotate.90.camera.fill"
-                            )
-                        }
-                    }
+                    CameraPickerToolbarItem(cameraServer: cameraServer)
                 }
             }
         }
