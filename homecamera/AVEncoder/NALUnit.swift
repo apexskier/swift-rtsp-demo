@@ -29,26 +29,37 @@ final class NALUnit {
         }
     }
 
-    let data: Data
+    var data: Data {
+        Data(bytes: start, count: length)
+    }
+    private(set) var start: UnsafePointer<UInt8>
+    private(set) var length: Int = 0
 
     // Bitstream access
-    private var idx: Int
+    private var idx: Int = 0
     private var nBits: Int = 0
     private var byte: UInt8 = 0
     private var cZeros: Int = 0
 
-    init(data: Data) {
-        self.data = data
-        self.idx = data.startIndex
+    init(start: UnsafePointer<UInt8>, length: Int) {
+        self.start = start
+        self.length = length
         self.resetBitstream()
     }
 
+    convenience init(data: Data, offset: Int = 0, length: Int? = nil) {
+        let bytes = data.withUnsafeBytes {
+            $0.baseAddress!.assumingMemoryBound(to: UInt8.self)
+        }
+        self.init(start: bytes.advanced(by: offset), length: length ?? data.count)
+    }
+
     func type() -> NALType {
-        NALType(byte: data[data.startIndex])
+        NALType(byte: start.pointee)
     }
 
     func resetBitstream() {
-        self.idx = data.startIndex
+        self.idx = 0
         self.nBits = 0
         self.cZeros = 0
     }
@@ -73,13 +84,13 @@ final class NALUnit {
 
     // get the next byte, removing emulation prevention bytes
     func getBYTE() -> UInt8 {
-        guard idx < data.count else { return 0 }
-        let b = data[idx]
+        guard idx < self.length else { return 0 }
+        let b = start.advanced(by: idx).pointee
         idx += 1
         // to avoid start-code emulation, a byte 0x03 is inserted after any 00 00 pair. Discard that here.
         if b == 0 {
             cZeros += 1
-            if idx < data.count && cZeros == 2 && data[idx] == 0x03 {
+            if idx < self.length && cZeros == 2 && start.advanced(by: idx).pointee == 0x03 {
                 idx += 1
                 cZeros = 0
             }
@@ -129,11 +140,11 @@ final class NALUnit {
     }
 
     func noMoreBits() -> Bool {
-        idx >= data.count && nBits == 0
+        idx >= length && nBits == 0
     }
 
     func isRefPic() -> Bool {
-        (data[data.startIndex] & 0x60) != 0
+        (start.pointee & 0x60) != 0
     }
 }
 
@@ -315,8 +326,8 @@ struct AVCCHeader {
     init?(header data: Data) {
         guard data.count >= 8 else { return nil }
         lengthSize = Int(data[4] & 3) + 1
-        let cSeq = Int(data[5] & 0x1f)
-        var p = data.startIndex.advanced(by: 6)
+        let cSeq = Int(data[5] & 0b00011111)
+        var p = 6
         var sps: NALUnit?
         for i in 0..<cSeq {
             if p + 2 > data.count { return nil }
@@ -324,7 +335,7 @@ struct AVCCHeader {
             p += 2
             if p + cThis > data.count { return nil }
             if i == 0 {
-                sps = NALUnit(data: data[p..<p + cThis])
+                sps = NALUnit(data: data, offset: p, length: cThis)
             }
             p = p.advanced(by: cThis)
         }
@@ -333,7 +344,7 @@ struct AVCCHeader {
         if cPPS > 0 {
             let cThis = Int(data[p + 1] << 8 | data[p + 2])
             p += 3
-            pps = NALUnit(data: data[p..<p + cThis])
+            pps = NALUnit(data: data, offset: p, length: cThis)
         } else {
             return nil
         }
