@@ -17,6 +17,7 @@ protocol RTSPSessionProto {
     func sendRTP(_ packet: Data)
     func sendRTCP(_ packet: Data)
     func tearDown()
+    func transportDescription() -> String
 }
 
 struct RTPSessionInterleaved: RTSPSessionProto {
@@ -44,6 +45,10 @@ struct RTPSessionInterleaved: RTSPSessionProto {
     }
 
     func tearDown() {}
+
+    func transportDescription() -> String {
+        "RTP/AVP/TCP;unicast;interleaved=0-1"
+    }
 
     // interleaved RFC 2326 10.12
     private static func interleavePacket(
@@ -164,6 +169,21 @@ final class RTPSessionUDP: RTSPSessionProto {
         CFSocketInvalidate(socketRTP)
         CFSocketInvalidate(socketRTCP)
         CFSocketInvalidate(recvRTCP)
+    }
+
+    func transportDescription() -> String {
+        let rtpPort = (addressRTP as Data)
+            .withUnsafeBytes({
+                $0.load(as: sockaddr_in.self)
+            })
+            .sin_port.bigEndian
+        let rtcpPort = (addressRTCP as Data)
+            .withUnsafeBytes({
+                $0.load(as: sockaddr_in.self)
+            })
+            .sin_port.bigEndian
+
+        return "RTP/AVP;unicast;client_port=\(rtpPort)-\(rtcpPort);server_port=6970-\(inboundRTCP)"
     }
 }
 
@@ -301,12 +321,15 @@ final class RTPSession {
         print("Tearing down session \(sessionId)")
         sessionConnection.tearDown()
     }
+
+    func transportDescription() -> String {
+        sessionConnection.transportDescription()
+    }
 }
 
 @Observable
 class RTSPClientConnection {
     private(set) var socketInbound: CFSocket?
-    private var address: CFData?
     private weak var server: RTSPServer?
     private var rls: CFRunLoopSource?
     private var videoSession: RTPSession?
@@ -454,90 +477,19 @@ class RTSPClientConnection {
             ]
             response += sdp
         case "setup":
-            if let transport = msg.headers["transport"],
-                let firstParam = msg.commandParameters.first,
+            if let firstParam = msg.commandParameters.first,
                 let url = URL(string: firstParam)
             {
                 switch url.path() {
                 case "/\(videoStreamId)":
-                    let props = transport.components(separatedBy: ";")
-                    var ports: [String]? = nil
-                    for s in props {
-                        if s.hasPrefix("client_port=") {
-                            let val = String(s.dropFirst(12))
-                            ports = val.components(separatedBy: "-")
-                            break
-                        }
-                    }
+                    if let session = self.createRTPSession(msg: msg, address: address) {
+                        videoSession = session
 
-                    if let ports, ports.count == 2,
-                        let portRTP = UInt16(ports[0]),
-                        let portRTCP = UInt16(ports[1])
-                    {
-                        selfQueue.sync {
-                            if let socketInbound {
-                                let sessionConnection = RTPSessionUDP(
-                                    socket: socketInbound,
-                                    rtp: portRTP,
-                                    rtcp: portRTCP,
-                                    inboundRTCP: inboundRTCPPort
-                                )
-                                let session = RTPSession(
-                                    clock: videoClock,
-                                    sessionConnection: sessionConnection,
-                                    receiverReports: receiverReports
-                                )
-                                sessionConnection.rtcpDelegate = session
-                                self.videoSession = session
-
-                                print(
-                                    "Started session \(session.sessionId) with RTP port \(portRTP) and RTCP port \(portRTCP)"
-                                )
-                            }
-                        }
-                        if let videoSession {
-                            response = msg.createResponse(code: 200, text: "OK")
-                            response += [
-                                "Session: \(videoSession.sessionId)",
-                                "Transport: RTP/AVP;unicast;client_port=\(portRTP)-\(portRTCP);server_port=6970-\(inboundRTCPPort)",
-                            ]
-                        }
-                    }
-
-                    if response.isEmpty {
-                        for s in props {
-                            if s.hasPrefix("interleaved=") {
-                                let val = String(s.dropFirst(12))
-                                let channels = val.components(separatedBy: "-")
-                                    .compactMap({ UInt8($0) })
-                                if let channelRTP = channels.first {
-                                    let channelRTCP =
-                                        channels.count > 1 ? channels[1] : (channelRTP + 1)
-
-                                    selfQueue.sync {
-                                        self.videoSession = RTPSession(
-                                            clock: videoClock,
-                                            sessionConnection: RTPSessionInterleaved(
-                                                channelRTP: channelRTP,
-                                                channelRTCP: channelRTCP,
-                                                socket: socketInbound!,
-                                                address: address
-                                            ),
-                                            receiverReports: receiverReports
-                                        )
-                                    }
-
-                                    if let videoSession {
-                                        response = msg.createResponse(code: 200, text: "OK")
-                                        response += [
-                                            "Session: \(videoSession)",
-                                            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1",
-                                        ]
-                                    }
-                                    break
-                                }
-                            }
-                        }
+                        response = msg.createResponse(code: 200, text: "OK")
+                        response += [
+                            "Session: \(session.sessionId)",
+                            "Transport: \(session.transportDescription())",
+                        ]
                     }
                 default:
                     print("unknown stream id in setup: \(url.path())")
@@ -553,14 +505,16 @@ class RTSPClientConnection {
                 response = msg.createResponse(code: 200, text: "OK")
                 response.append("Session: \(videoSession.sessionId)")
             } else {
-                response = msg.createResponse(code: 451, text: "Wrong state")
+                response = msg.createResponse(code: 455, text: "Wrong state")
+                response.append("Allow: DESCRIBE, OPTIONS, SETUP")
             }
         case "teardown":
             tearDown()
             response = msg.createResponse(code: 200, text: "OK")
         default:
             print("RTSP method \(cmd) not handled")
-            response = msg.createResponse(code: 451, text: "Method not recognised")
+            response = msg.createResponse(code: 405, text: "Method not recognised")
+            response.append("Allow: DESCRIBE, SETUP, TEARDOWN, PLAY, OPTIONS")
         }
         if !response.isEmpty,
             let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8),
@@ -575,6 +529,59 @@ class RTSPClientConnection {
             CFSocketSendData(socketInbound, nil, responseData as CFData, 2)
         }
         return msg.length
+    }
+
+    private func createRTPSession(msg: RTSPMessage, address: CFData) -> RTPSession? {
+        guard let transport = msg.headers["transport"] else {
+            return nil
+        }
+
+        let props = transport.components(separatedBy: ";")
+
+        // first try to find a UDP transport
+        if let socketInbound,
+            let ports = props.first(where: { $0.hasPrefix("client_port=") })?
+                .dropFirst(12)
+                .components(separatedBy: "-"), ports.count == 2,
+            let portRTP = UInt16(ports[0]),
+            let portRTCP = UInt16(ports[1])
+        {
+            let sessionConnection = RTPSessionUDP(
+                socket: socketInbound,
+                rtp: portRTP,
+                rtcp: portRTCP,
+                inboundRTCP: inboundRTCPPort
+            )
+            let session = RTPSession(
+                clock: videoClock,
+                sessionConnection: sessionConnection,
+                receiverReports: receiverReports
+            )
+            sessionConnection.rtcpDelegate = session
+            return session
+        }
+
+        // then try to find an interleaved transport
+        if let channels = props.first(where: { $0.hasPrefix("interleaved=") })?
+            .dropFirst(12)
+            .components(separatedBy: "-")
+            .compactMap(UInt8.init),
+            let channelRTP = channels.first
+        {
+            return RTPSession(
+                clock: videoClock,
+                sessionConnection: RTPSessionInterleaved(
+                    channelRTP: channelRTP,
+                    channelRTCP: channels.count > 1 ? channels[1] : (channelRTP + 1),
+                    socket: socketInbound!,
+                    address: address
+                ),
+                receiverReports: receiverReports
+            )
+        }
+
+        print("No suitable transport found in RTSP SETUP")
+        return nil
     }
 
     private func makeSDP() -> [String] {
