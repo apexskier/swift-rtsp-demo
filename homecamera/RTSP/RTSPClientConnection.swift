@@ -9,7 +9,7 @@ private let base64Mapping = Array(
 private let maxPacketSize = 1200
 private let rtpHeaderSize = 12
 
-private enum RTPSessionState {
+private enum RTSPSessionState {
     case setup, playing
 }
 
@@ -67,65 +67,39 @@ struct RTPSessionInterleaved: RTSPSessionProto {
     }
 }
 
+extension RTPSessionInterleaved: CustomDebugStringConvertible {
+    var debugDescription: String {
+        "RTPSessionInterleaved(channelRTP: \(channelRTP), channelRTCP: \(channelRTCP))"
+    }
+}
+
 final class RTPSessionUDP: RTSPSessionProto {
     private let addressRTP: CFData
     private let socketRTP: CFSocket
     private let addressRTCP: CFData
     private let socketRTCP: CFSocket
+    private var recvRTP: CFSocket?
     private var recvRTCP: CFSocket?
+    private var rlsRTP: CFRunLoopSource?
     private var rlsRTCP: CFRunLoopSource?
-    private var inboundRTCP: UInt16
+    private let inboundAddressRTP: CFData?
+    private var inboundAddressRTCP: CFData?
 
-    var rtcpDelegate: RTPSession? {
-        didSet {
-            guard let rtcpDelegate else {
-                return
-            }
-            // reader reports received here
-            var info = CFSocketContext()
-            info.info = UnsafeMutableRawPointer(Unmanaged.passUnretained(rtcpDelegate).toOpaque())
-            self.recvRTCP = CFSocketCreate(
-                nil,
-                PF_INET,
-                SOCK_DGRAM,
-                IPPROTO_UDP,
-                CFSocketCallBackType.dataCallBack.rawValue,
-                { (s, callbackType, address, data, info) in
-                    guard let info else { return }
-                    let session = Unmanaged<RTPSession>.fromOpaque(info)
-                        .takeUnretainedValue()
-                    switch callbackType {
-                    case .dataCallBack:
-                        if let data {
-                            session.onRTCP(
-                                Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
-                            )
-                        }
-                    default:
-                        print("unexpected socket event")
-                    }
-                },
-                &info
-            )
-
-            var addr = sockaddr_in()
-            addr.sin_addr.s_addr = INADDR_ANY
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = in_port_t(inboundRTCP.bigEndian)
-            let dataAddr = Data(bytes: &addr, count: MemoryLayout<sockaddr_in>.size) as CFData
-            CFSocketSetAddress(self.recvRTCP, dataAddr)
-
-            self.rlsRTCP = CFSocketCreateRunLoopSource(nil, self.recvRTCP, 0)
-            CFRunLoopAddSource(CFRunLoopGetMain(), self.rlsRTCP, .commonModes)
-        }
+    // SessionWrapper is a persistent class used to allow calling out to the session for inbound traffic
+    class SessionWrapper {
+        weak var session: RTPSession?
     }
 
-    init(socket: CFSocket, rtp: UInt16, rtcp: UInt16, inboundRTCP: UInt16) {
+    var sessionWrapper = SessionWrapper()
+
+    init(socket: CFSocket, rtp: UInt16, rtcp: UInt16) {
         guard let data = CFSocketCopyPeerAddress(socket) else {
             fatalError("No peer address for socketInbound")
         }
         var paddr = (data as Data).read(as: sockaddr_in.self)
 
+        // RTP server -> client socket, UDP
+        // reader reports received here
         paddr.sin_port = in_port_t(rtp.bigEndian)
         guard let addrRTP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
             fatalError("Failed to create RTP address")
@@ -135,6 +109,7 @@ final class RTPSessionUDP: RTSPSessionProto {
             fatalError("Failed to create RTP socketInbound")
         }
 
+        // RTCP server -> client socket, UDP
         paddr.sin_port = in_port_t(rtcp.bigEndian)
         guard let addrRTCP = CFDataCreate(nil, &paddr, MemoryLayout<sockaddr_in>.size) else {
             fatalError("Failed to create RTCP address")
@@ -145,11 +120,103 @@ final class RTPSessionUDP: RTSPSessionProto {
             fatalError("Failed to create RTCP socket")
         }
 
+        // RTP client -> server socket, UDP
+        // reader reports received here
+        var context = CFSocketContext()
+        context.info = UnsafeMutableRawPointer(
+            Unmanaged.passUnretained(sessionWrapper).toOpaque()
+        )
+        self.recvRTP = CFSocketCreate(
+            nil,
+            PF_INET,
+            SOCK_DGRAM,
+            IPPROTO_UDP,
+            CFSocketCallBackType.dataCallBack.rawValue,
+            { (s, callbackType, address, data, info) in
+                guard let info else { return }
+                let sessionWrapper = Unmanaged<SessionWrapper>.fromOpaque(info)
+                    .takeUnretainedValue()
+                switch callbackType {
+                case .dataCallBack:
+                    if let data {
+                        sessionWrapper.session?
+                            .onRTP(
+                                Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
+                            )
+                    }
+                default:
+                    print("unexpected socket event on receive RTP socket")
+                }
+            },
+            &context
+        )
+
+        var addr = sockaddr_in()
+        addr.sin_addr.s_addr = INADDR_ANY
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0  // random port
+        let dataAddr = Data(bytes: &addr, count: MemoryLayout<sockaddr_in>.size) as CFData
+        guard CFSocketSetAddress(self.recvRTP, dataAddr) == .success else {
+            CFSocketInvalidate(self.recvRTP)
+            fatalError("Failed to bind RTP socket")
+        }
+
+        guard let boundAddress = CFSocketCopyAddress(self.recvRTP) else {
+            CFSocketInvalidate(self.recvRTP)
+            fatalError("Failed to copy bound address for RTP socket")
+        }
+
+        self.inboundAddressRTP = boundAddress
+
+        self.rlsRTP = CFSocketCreateRunLoopSource(nil, self.recvRTP, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), self.rlsRTP, .commonModes)
+
+        // RTCP client -> server socket, UDP
+        // reader reports received here
+        self.recvRTCP = CFSocketCreate(
+            nil,
+            PF_INET,
+            SOCK_DGRAM,
+            IPPROTO_UDP,
+            CFSocketCallBackType.dataCallBack.rawValue,
+            { (s, callbackType, address, data, info) in
+                guard let info else { return }
+                let sessionWrapper = Unmanaged<SessionWrapper>.fromOpaque(info)
+                    .takeUnretainedValue()
+                switch callbackType {
+                case .dataCallBack:
+                    if let data {
+                        sessionWrapper.session?
+                            .onRTCP(
+                                Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
+                            )
+                    }
+                default:
+                    print("unexpected socket event on receive RTCP socket")
+                }
+            },
+            &context
+        )
+
+        guard CFSocketSetAddress(self.recvRTCP, dataAddr) == .success else {
+            CFSocketInvalidate(self.recvRTCP)
+            fatalError("Failed to bind RTCP socket")
+        }
+
+        guard let boundAddress = CFSocketCopyAddress(self.recvRTCP) else {
+            CFSocketInvalidate(self.recvRTCP)
+            fatalError("Failed to copy bound address for RTCP socket")
+        }
+
+        self.inboundAddressRTCP = boundAddress
+
+        self.rlsRTCP = CFSocketCreateRunLoopSource(nil, self.recvRTCP, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), self.rlsRTCP, .commonModes)
+
         self.addressRTP = addrRTP
         self.socketRTP = socketRTP
         self.addressRTCP = addrRTCP
         self.socketRTCP = socketRTCP
-        self.inboundRTCP = inboundRTCP
     }
 
     func sendRTP(_ packet: Data) {
@@ -182,14 +249,44 @@ final class RTPSessionUDP: RTSPSessionProto {
                 $0.load(as: sockaddr_in.self)
             })
             .sin_port.bigEndian
+        guard
+            let inboundRtpPort = (inboundAddressRTP as? Data)?
+                .withUnsafeBytes({
+                    $0.load(as: sockaddr_in.self)
+                })
+                .sin_port.bigEndian,
+            let inboundRtcpPort = (inboundAddressRTCP as? Data)?
+                .withUnsafeBytes({
+                    $0.load(as: sockaddr_in.self)
+                })
+                .sin_port.bigEndian
+        else {
+            fatalError("No inbound address for RTP/RTCP")
+        }
 
-        return "RTP/AVP;unicast;client_port=\(rtpPort)-\(rtcpPort);server_port=6970-\(inboundRTCP)"
+        return
+            "RTP/AVP;unicast;client_port=\(rtpPort)-\(rtcpPort);server_port=\(inboundRtpPort)-\(inboundRtcpPort)"
+    }
+}
+
+extension RTPSessionUDP: CustomDebugStringConvertible {
+    var debugDescription: String {
+        let rtpPort = (addressRTP as Data)
+            .withUnsafeBytes({
+                $0.load(as: sockaddr_in.self)
+            })
+            .sin_port.bigEndian
+        let rtcpPort = (addressRTCP as Data)
+            .withUnsafeBytes({
+                $0.load(as: sockaddr_in.self)
+            })
+            .sin_port.bigEndian
+
+        return "RTPSessionUDP(rtpPort: \(rtpPort), rtcpPort: \(rtcpPort))"
     }
 }
 
 final class RTPSession {
-    let sessionId = "\(UInt32.random(in: UInt32.min...UInt32.max))"
-    fileprivate var state: RTPSessionState = .setup
     let ssrc = UInt32.random(in: UInt32.min...UInt32.max)
     var packets = 0
     let sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
@@ -279,15 +376,17 @@ final class RTPSession {
         }
     }
 
-    func onRTCP(_ data: Data) {
-        var ptr = data.startIndex
-
+    func onRTP(_ data: Data) {
         // two packets like this are sent on connection by VLC macos UDP
         if data.elementsEqual([UInt8]([0xCE, 0xFA, 0xED, 0xFE])) {
             print("ignoring unknown RTCP packet: CEFAEDFE")
             return
         }
+        print("C->S: RTP (\(sessionConnection.transportDescription()))")
+    }
 
+    func onRTCP(_ data: Data) {
+        var ptr = data.startIndex
         while ptr < data.endIndex {
             // print(
             //     """
@@ -318,7 +417,7 @@ final class RTPSession {
     }
 
     func tearDown() {
-        print("Tearing down session \(sessionId)")
+        print("Tearing down RTP session")
         sessionConnection.tearDown()
     }
 
@@ -332,14 +431,20 @@ class RTSPClientConnection {
     private(set) var socketInbound: CFSocket?
     private weak var server: RTSPServer?
     private var rls: CFRunLoopSource?
-    private var videoSession: RTPSession?
     private var bFirst: Bool = true
-    private let inboundRTCPPort: UInt16 = 6971
     private let videoClock = 90000  // H264 clock frequency
     private(set) var sourceDescription: String? = nil
     private let selfQueue = DispatchQueue(
         label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
     )
+
+    final class RTSPSession {
+        fileprivate var state: RTSPSessionState = .setup
+        var rtpSessions = [String: RTPSession]()
+    }
+
+    // map of RTSP Sesssion IDs to map of Stream IDs to RTPSession objects
+    private var sessions = [String: RTSPSession]()
 
     private let videoStreamId = "streamid=1"
 
@@ -347,19 +452,17 @@ class RTSPClientConnection {
 
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
         self.server = server
-        var context = CFSocketContext(
-            version: 0,
-            info: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
-            retain: nil,
-            release: nil,
-            copyDescription: nil
-        )
+
+        // client -> server RTSP socket
+        var context = CFSocketContext()
+        context.info = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         self.socketInbound = CFSocketCreateWithNative(
             nil,
             socketHandle,
             CFSocketCallBackType.dataCallBack.rawValue,
             { (s, callbackType, address, data, info) in
                 guard let info, let address else { return }
+
                 let conn = Unmanaged<RTSPClientConnection>.fromOpaque(info).takeUnretainedValue()
                 switch callbackType {
                 case .dataCallBack:
@@ -375,7 +478,6 @@ class RTSPClientConnection {
             },
             &context
         )
-        guard let socketInbound else { return nil }
         self.rls = CFSocketCreateRunLoopSource(nil, socketInbound, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), self.rls, .commonModes)
     }
@@ -389,7 +491,12 @@ class RTSPClientConnection {
             return
         }
 
-        if let videoSession, videoSession.sessionConnection is RTPSessionInterleaved {
+        if let rtspSession = sessions.first(where: { $1.state == .playing }),
+            let rtpSession = rtspSession.value.rtpSessions.first(where: { $0.key == videoStreamId }
+            )?
+            .value,
+            rtpSession.sessionConnection is RTPSessionInterleaved
+        {
             var ptr = allData.startIndex
 
             while ptr < allData.endIndex {  // '$' indicates an RTSP interleaved frame
@@ -407,7 +514,7 @@ class RTSPClientConnection {
                     if data.count < Int(partialPacket.left) {
                         partialPacket.left -= UInt16(data.count)
                     } else {
-                        videoSession.onRTCP(partialPacket.data)
+                        rtpSession.onRTCP(partialPacket.data)
                         self.partialPacket = nil
                     }
                     ptr += data.count
@@ -420,7 +527,7 @@ class RTSPClientConnection {
                         partialPacket = (interleavedData, length - UInt16(interleavedData.count))
                     } else {
                         // ASSUMING RTCP
-                        videoSession.onRTCP(interleavedData)
+                        rtpSession.onRTCP(interleavedData)
                     }
                     ptr += 4 + Int(length)
                 } else {
@@ -460,7 +567,7 @@ class RTSPClientConnection {
                 dateStyle: .long,
                 timeStyle: .long
             )
-            if let socketInbound, let localaddr = CFSocketCopyAddress(socketInbound) as? Data {
+            if let localaddr = CFSocketCopyAddress(socketInbound) as? Data {
                 let ipString = localaddr.withUnsafeBytes {
                     (ptr: UnsafeRawBufferPointer) -> String in
                     let sockaddr = ptr.baseAddress!.assumingMemoryBound(to: sockaddr_in.self)
@@ -480,45 +587,68 @@ class RTSPClientConnection {
             if let firstParam = msg.commandParameters.first,
                 let url = URL(string: firstParam)
             {
-                switch url.path() {
-                case "/\(videoStreamId)":
-                    if let session = self.createRTPSession(msg: msg, address: address) {
-                        videoSession = session
+                let rtspSession =
+                    msg.headers["session"] ?? "\(UInt32.random(in: UInt32.min...UInt32.max))"
+                if sessions[rtspSession] == nil {
+                    sessions[rtspSession] = .init()
+                }
+                guard let rtpSessions = sessions[rtspSession] else {
+                    fatalError("No RTSP session found for \(rtspSession)")
+                }
 
-                        response = msg.createResponse(code: 200, text: "OK")
-                        response += [
-                            "Session: \(session.sessionId)",
-                            "Transport: \(session.transportDescription())",
-                        ]
-                    }
-                default:
+                let streamId = url.path().trimmingPrefix("/")
+                if streamId != videoStreamId {
                     print("unknown stream id in setup: \(url.path())")
+                    response = msg.createResponse(code: 404, text: "Stream ID not recognised")
+                } else if rtpSessions.rtpSessions[String(streamId)] != nil {
+                    response = msg.createResponse(code: 455, text: "Method not valid in this state")
+                } else if let session = self.createRTPSession(msg: msg, address: address) {
+                    rtpSessions.rtpSessions[String(streamId)] = session
+                    print(
+                        "Created RTPSession for stream \(streamId) in session \(rtspSession), \(session.sessionConnection)"
+                    )
+                    response = msg.createResponse(code: 200, text: "OK")
+                    response += [
+                        "Session: \(rtspSession)",
+                        "Transport: \(session.transportDescription())",
+                    ]
                 }
             }
             if response.isEmpty {
                 response = msg.createResponse(code: 451, text: "Need better error string here")
             }
         case "play":
-            if let videoSession, videoSession.state == .setup {
-                videoSession.state = .playing
-                bFirst = true
-                response = msg.createResponse(code: 200, text: "OK")
-                response.append("Session: \(videoSession.sessionId)")
+            if let rtspSessionId = msg.headers["session"] {
+                if let rtspSession = sessions[rtspSessionId] {
+                    if rtspSession.state == .setup {
+                        rtspSession.state = .playing
+                        bFirst = true
+                        response = msg.createResponse(code: 200, text: "OK")
+                        print("Playing session \(rtspSessionId)")
+                    } else {
+                        response = msg.createResponse(code: 455, text: "Wrong state")
+                        response.append("Allow: DESCRIBE, OPTIONS, SETUP")
+                    }
+                } else {
+                    response = msg.createResponse(code: 454, text: "Session not found")
+                }
             } else {
-                response = msg.createResponse(code: 455, text: "Wrong state")
-                response.append("Allow: DESCRIBE, OPTIONS, SETUP")
+                response = msg.createResponse(code: 451, text: "Missing session header")
             }
         case "teardown":
-            tearDown()
-            response = msg.createResponse(code: 200, text: "OK")
+            if let rtspSessionId = msg.headers["session"] {
+                tearDown(rtspSessionId: rtspSessionId)
+                response = msg.createResponse(code: 200, text: "OK")
+            } else {
+                response = msg.createResponse(code: 451, text: "Missing session header")
+            }
         default:
             print("RTSP method \(cmd) not handled")
             response = msg.createResponse(code: 405, text: "Method not recognised")
             response.append("Allow: DESCRIBE, SETUP, TEARDOWN, PLAY, OPTIONS")
         }
         if !response.isEmpty,
-            let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8),
-            let socketInbound
+            let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8)
         {
             // print(
             //     """
@@ -532,32 +662,30 @@ class RTSPClientConnection {
     }
 
     private func createRTPSession(msg: RTSPMessage, address: CFData) -> RTPSession? {
-        guard let transport = msg.headers["transport"] else {
+        guard let socketInbound, let transport = msg.headers["transport"] else {
             return nil
         }
 
         let props = transport.components(separatedBy: ";")
 
         // first try to find a UDP transport
-        if let socketInbound,
-            let ports = props.first(where: { $0.hasPrefix("client_port=") })?
-                .dropFirst(12)
-                .components(separatedBy: "-"), ports.count == 2,
+        if let ports = props.first(where: { $0.hasPrefix("client_port=") })?
+            .dropFirst(12)
+            .components(separatedBy: "-"), ports.count == 2,
             let portRTP = UInt16(ports[0]),
             let portRTCP = UInt16(ports[1])
         {
             let sessionConnection = RTPSessionUDP(
                 socket: socketInbound,
                 rtp: portRTP,
-                rtcp: portRTCP,
-                inboundRTCP: inboundRTCPPort
+                rtcp: portRTCP
             )
             let session = RTPSession(
                 clock: videoClock,
                 sessionConnection: sessionConnection,
                 receiverReports: receiverReports
             )
-            sessionConnection.rtcpDelegate = session
+            sessionConnection.sessionWrapper.session = session
             return session
         }
 
@@ -573,7 +701,7 @@ class RTSPClientConnection {
                 sessionConnection: RTPSessionInterleaved(
                     channelRTP: channelRTP,
                     channelRTCP: channels.count > 1 ? channels[1] : (channelRTP + 1),
-                    socket: socketInbound!,
+                    socket: socketInbound,
                     address: address
                 ),
                 receiverReports: receiverReports
@@ -610,7 +738,6 @@ class RTSPClientConnection {
 
         let verid = UInt32.random(in: UInt32.min...UInt32.max)
 
-        guard let socketInbound else { return [] }
         guard let dlocaladdr = CFSocketCopyAddress(socketInbound) else {
             fatalError("No peer address for socket")
         }
@@ -642,7 +769,12 @@ class RTSPClientConnection {
     }
 
     func onVideoData(_ data: [Data], time pts: Double) {
-        guard let videoSession, videoSession.state == .playing else { return }
+        guard
+            let rtspSession = sessions.first(where: { $1.state == .playing }),
+            let rtpSession = rtspSession.value.rtpSessions.first(where: { $0.key == videoStreamId }
+            )?
+            .value
+        else { return }
         let maxSinglePacket = maxPacketSize - rtpHeaderSize
         let maxFragmentPacket = maxSinglePacket - 2
         for (i, nalu) in data.enumerated() {
@@ -653,14 +785,14 @@ class RTSPClientConnection {
                     continue
                 }
                 bFirst = false
-                print("Playback starting at first IDR \(videoSession.sessionId)")
+                print("Playback starting at first IDR \(rtspSession.key)")
             }
             if countBytes < maxSinglePacket {
                 var packet = Data(count: maxPacketSize)
 
-                videoSession.writeHeader(&packet, marker: bLast, time: pts)
+                rtpSession.writeHeader(&packet, marker: bLast, time: pts)
                 packet.replaceSubrange(packet.startIndex.advanced(by: rtpHeaderSize)..., with: nalu)
-                videoSession.sendPacket(
+                rtpSession.sendPacket(
                     packet[
                         packet
                             .startIndex..<packet.startIndex.advanced(by: countBytes + rtpHeaderSize)
@@ -678,7 +810,7 @@ class RTSPClientConnection {
 
                     let countThis = min(countBytes, maxFragmentPacket)
                     let bEnd = countThis == countBytes
-                    videoSession.writeHeader(&packet, marker: bLast && bEnd, time: pts)
+                    rtpSession.writeHeader(&packet, marker: bLast && bEnd, time: pts)
 
                     packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
                     var fuHeader = naluHeader & 0x1f
@@ -694,7 +826,7 @@ class RTSPClientConnection {
                             + 2..<(packet.startIndex + rtpHeaderSize + 2 + countThis)
                     ] =
                         nalu[pointerNalu..<(pointerNalu + countThis)]
-                    videoSession.sendPacket(
+                    rtpSession.sendPacket(
                         packet[
                             packet
                                 .startIndex..<packet.startIndex.advanced(
@@ -710,16 +842,21 @@ class RTSPClientConnection {
         }
     }
 
-    private func tearDown() {
-        videoSession?.tearDown()
-        videoSession = nil
+    private func tearDown(rtspSessionId: String) {
+        guard let rtspSession = sessions[rtspSessionId] else {
+            return
+        }
+        for (streamId, rtpSession) in rtspSession.rtpSessions {
+            rtpSession.tearDown()
+            print("Tearing down RTP session \(rtspSessionId) stream \(streamId)")
+        }
+        sessions.removeValue(forKey: rtspSessionId)
     }
 
     func shutdown() {
-        tearDown()
-        if let socketInbound {
-            CFSocketInvalidate(socketInbound)
-            self.socketInbound = nil
+        for rtspSessionId in sessions.keys {
+            tearDown(rtspSessionId: rtspSessionId)
         }
+        CFSocketInvalidate(socketInbound)
     }
 }

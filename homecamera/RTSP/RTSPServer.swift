@@ -9,18 +9,15 @@ class RTSPServer {
     private(set) var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
     var bitrate: Int = 0
+    // primary RTSP server port
     let port: UInt16 = 554
     private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).RTSPServer.self")
 
     init?(configData: Data) {
         self.configData = configData
-        var context = CFSocketContext(
-            version: 0,
-            info: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
-            retain: nil,
-            release: nil,
-            copyDescription: nil
-        )
+        // primary RTSP server socket, TCP 554
+        var context = CFSocketContext()
+        context.info = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         listener = CFSocketCreate(
             nil,
             PF_INET,
@@ -33,7 +30,7 @@ class RTSPServer {
                 switch callbackType {
                 case .acceptCallBack:
                     if let pH = data?.assumingMemoryBound(to: CFSocketNativeHandle.self) {
-                        server.onAccept(childHandle: pH.pointee)
+                        server.onAccept(childHandle: pH.pointee, address: address)
                     }
                 default:
                     print("unexpected socket event")
@@ -67,12 +64,23 @@ class RTSPServer {
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
     }
 
-    private func onAccept(childHandle: CFSocketNativeHandle) {
+    private func onAccept(childHandle: CFSocketNativeHandle, address: CFData?) {
         guard let conn = RTSPClientConnection(socketHandle: childHandle, server: self) else {
             return
         }
         selfQueue.sync {
-            print("Client connected")
+            var ipString = "unknown"
+            var port: UInt16 = 0
+            if let address = address as Data? {
+                address.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                    if let sockaddr = ptr.baseAddress?.assumingMemoryBound(to: sockaddr_in.self) {
+                        let addr = sockaddr.pointee.sin_addr
+                        ipString = String(cString: inet_ntoa(addr))
+                        port = sockaddr.pointee.sin_port.littleEndian
+                    }
+                }
+            }
+            print("Client connected: \(ipString):\(port)")
             connections.append(conn)
         }
     }
