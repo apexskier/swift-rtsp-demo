@@ -780,74 +780,78 @@ class RTSPClientConnection {
     }
 
     func onVideoData(_ data: [Data], time pts: Double) {
-        guard
-            let rtspSession = sessions.first(where: { $1.state == .playing }),
-            let rtpSession = rtspSession.value.rtpSessions.first(where: { $0.key == videoStreamId }
-            )?
-            .value
-        else { return }
-        let maxSinglePacket = maxPacketSize - rtpHeaderSize
-        let maxFragmentPacket = maxSinglePacket - 2
-        for (i, nalu) in data.enumerated() {
-            var countBytes = nalu.count
-            let bLast = (i == data.count - 1)
-            if bFirst {
-                if (nalu[0] & 0x1f) != 5 {
-                    continue
+        for (rtspSessionId, rtspSession) in sessions {
+            guard rtspSession.state == .playing,
+                let rtpSession = rtspSession.rtpSessions[videoStreamId]
+            else { continue }
+            let maxSinglePacket = maxPacketSize - rtpHeaderSize
+            let maxFragmentPacket = maxSinglePacket - 2
+            for (i, nalu) in data.enumerated() {
+                var countBytes = nalu.count
+                let bLast = (i == data.count - 1)
+                if bFirst {
+                    if (nalu[0] & 0x1f) != 5 {
+                        continue
+                    }
+                    bFirst = false
+                    print("Playback starting at first IDR \(rtspSessionId)")
                 }
-                bFirst = false
-                print("Playback starting at first IDR \(rtspSession.key)")
-            }
-            if countBytes < maxSinglePacket {
-                var packet = Data(count: maxPacketSize)
-
-                rtpSession.writeHeader(&packet, marker: bLast, time: pts)
-                packet.replaceSubrange(packet.startIndex.advanced(by: rtpHeaderSize)..., with: nalu)
-                rtpSession.sendPacket(
-                    packet[
-                        packet
-                            .startIndex..<packet.startIndex.advanced(by: countBytes + rtpHeaderSize)
-                    ]
-                )
-            } else {
-                var pointerNalu = nalu.startIndex
-                let naluHeader = nalu[pointerNalu]
-                pointerNalu += 1
-                countBytes -= 1
-                var bStart = true
-
-                while countBytes > 0 {
+                if countBytes < maxSinglePacket {
                     var packet = Data(count: maxPacketSize)
 
-                    let countThis = min(countBytes, maxFragmentPacket)
-                    let bEnd = countThis == countBytes
-                    rtpSession.writeHeader(&packet, marker: bLast && bEnd, time: pts)
-
-                    packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
-                    var fuHeader = naluHeader & 0x1f
-                    if bStart {
-                        fuHeader |= 0x80
-                        bStart = false
-                    } else if bEnd {
-                        fuHeader |= 0x40
-                    }
-                    packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
-                    packet[
-                        packet.startIndex + rtpHeaderSize
-                            + 2..<(packet.startIndex + rtpHeaderSize + 2 + countThis)
-                    ] =
-                        nalu[pointerNalu..<(pointerNalu + countThis)]
+                    rtpSession.writeHeader(&packet, marker: bLast, time: pts)
+                    packet.replaceSubrange(
+                        packet.startIndex.advanced(by: rtpHeaderSize)...,
+                        with: nalu
+                    )
                     rtpSession.sendPacket(
                         packet[
                             packet
                                 .startIndex..<packet.startIndex.advanced(
-                                    by: countThis + rtpHeaderSize + 2
+                                    by: countBytes + rtpHeaderSize
                                 )
                         ]
                     )
+                } else {
+                    var pointerNalu = nalu.startIndex
+                    let naluHeader = nalu[pointerNalu]
+                    pointerNalu += 1
+                    countBytes -= 1
+                    var bStart = true
 
-                    pointerNalu += countThis
-                    countBytes -= countThis
+                    while countBytes > 0 {
+                        var packet = Data(count: maxPacketSize)
+
+                        let countThis = min(countBytes, maxFragmentPacket)
+                        let bEnd = countThis == countBytes
+                        rtpSession.writeHeader(&packet, marker: bLast && bEnd, time: pts)
+
+                        packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
+                        var fuHeader = naluHeader & 0x1f
+                        if bStart {
+                            fuHeader |= 0x80
+                            bStart = false
+                        } else if bEnd {
+                            fuHeader |= 0x40
+                        }
+                        packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
+                        packet[
+                            packet.startIndex + rtpHeaderSize
+                                + 2..<(packet.startIndex + rtpHeaderSize + 2 + countThis)
+                        ] =
+                            nalu[pointerNalu..<(pointerNalu + countThis)]
+                        rtpSession.sendPacket(
+                            packet[
+                                packet
+                                    .startIndex..<packet.startIndex.advanced(
+                                        by: countThis + rtpHeaderSize + 2
+                                    )
+                            ]
+                        )
+
+                        pointerNalu += countThis
+                        countBytes -= countThis
+                    }
                 }
             }
         }
