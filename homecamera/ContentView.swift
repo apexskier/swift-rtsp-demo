@@ -118,7 +118,7 @@ struct ContentView: View {
                 }
                 VStack {
                     if let rtsp = cameraServer.rtsp {
-                        ForEach(rtsp.connections, id: \.socket) { connection in
+                        ForEach(rtsp.connections, id: \.socketInbound) { connection in
                             ConnectionView(connection: connection)
                         }
                     }
