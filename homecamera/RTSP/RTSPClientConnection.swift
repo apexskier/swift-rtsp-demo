@@ -44,10 +44,12 @@ struct RTPSessionInterleaved: RTSPSessionProto {
         )
     }
 
-    func tearDown() {}
+    func tearDown() {
+        print("Tearing down \(self)")
+    }
 
     func transportDescription() -> String {
-        "RTP/AVP/TCP;unicast;interleaved=0-1"
+        "RTP/AVP/TCP;unicast;interleaved=\(channelRTP)-\(channelRTCP)"
     }
 
     // interleaved RFC 2326 10.12
@@ -233,6 +235,7 @@ final class RTPSessionUDP: RTSPSessionProto {
     }
 
     func tearDown() {
+        print("Tearing down \(self)")
         CFSocketInvalidate(socketRTP)
         CFSocketInvalidate(socketRTCP)
         CFSocketInvalidate(recvRTCP)
@@ -417,7 +420,6 @@ final class RTPSession {
     }
 
     func tearDown() {
-        print("Tearing down RTP session")
         sessionConnection.tearDown()
     }
 
@@ -482,7 +484,28 @@ class RTSPClientConnection {
         CFRunLoopAddSource(CFRunLoopGetMain(), self.rls, .commonModes)
     }
 
-    private var partialPacket: (data: Data, left: UInt16)?
+    private var partialPacket: (data: Data, channel: UInt8, left: UInt16)?
+
+    private func sendInterleaved(channel: UInt8, data: Data) {
+        for (_, rtspSession) in sessions {
+            if rtspSession.state == .playing {
+                for (_, rtpSession) in rtspSession.rtpSessions {
+                    if let interleavedRtpSessionConnection = rtpSession
+                        .sessionConnection as? RTPSessionInterleaved
+                    {
+                        switch channel {
+                        case interleavedRtpSessionConnection.channelRTP:
+                            rtpSession.onRTP(data)
+                        case interleavedRtpSessionConnection.channelRTCP:
+                            rtpSession.onRTCP(data)
+                        default:
+                            continue
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private func onSocketData(_ allData: Data, address: CFData) {
         if allData.isEmpty {
@@ -491,56 +514,44 @@ class RTSPClientConnection {
             return
         }
 
-        if let rtspSession = sessions.first(where: { $1.state == .playing }),
-            let rtpSession = rtspSession.value.rtpSessions.first(where: { $0.key == videoStreamId }
-            )?
-            .value,
-            rtpSession.sessionConnection is RTPSessionInterleaved
-        {
-            var ptr = allData.startIndex
+        var ptr = allData.startIndex
+        while ptr < allData.endIndex {
+            // possibilities here
+            // - complete RTSP packet
+            // - complete RTCP packet
+            // - RTCP packet header, with remainder of data in next packet
+            // - RTSP packet followed by RTCP packet
+            // - multiple RTCP packets
 
-            while ptr < allData.endIndex {  // '$' indicates an RTSP interleaved frame
-                // possibilities here
-                // - complete RTSP packet
-                // - complete RTCP packet
-                // - RTCP packet header, with remainder of data in next packet
-                // - RTSP packet followed by RTCP packet
-                // - multiple RTCP packets
+            let data = allData[ptr...]
 
-                let data = allData[ptr...]
-
-                if var partialPacket {
-                    partialPacket.data.append(contentsOf: data)
-                    if data.count < Int(partialPacket.left) {
-                        partialPacket.left -= UInt16(data.count)
-                    } else {
-                        rtpSession.onRTCP(partialPacket.data)
-                        self.partialPacket = nil
-                    }
-                    ptr += data.count
-                } else if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
-                    // let channel = data[1]  // channel number
-                    let length = data.read(at: data.startIndex + 2, as: UInt16.self).bigEndian
-                    let remainingDataCount = data.count - 4
-                    let interleavedData = data[data.startIndex.advanced(by: 4)...]
-                    if remainingDataCount < length {
-                        partialPacket = (interleavedData, length - UInt16(interleavedData.count))
-                    } else {
-                        // ASSUMING RTCP
-                        rtpSession.onRTCP(interleavedData)
-                    }
-                    ptr += 4 + Int(length)
+            if var partialPacket {
+                // so far I've only seen interleaved packets as partial, so assume that
+                partialPacket.data.append(contentsOf: data)
+                if data.count < Int(partialPacket.left) {
+                    partialPacket.left -= UInt16(data.count)
                 } else {
-                    // RTSP packet
-                    let len = handleRTSPPacket(data, address: address)
-                    ptr += len
-                    // if remaining data, could be a RTCP packet
+                    sendInterleaved(channel: partialPacket.channel, data: partialPacket.data)
+                    self.partialPacket = nil
                 }
-            }
-        } else {
-            let len = handleRTSPPacket(allData, address: address)
-            if len < allData.count {
-                print("additional data after RTSP packet (\(allData.count - len) bytes)")
+                ptr += data.count
+            } else if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
+                let channel = data[data.startIndex + 1]  // channel number
+                let length = data.read(at: data.startIndex + 2, as: UInt16.self).bigEndian
+                let remainingDataCount = data.count - 4
+                let interleavedData = data[data.startIndex.advanced(by: 4)...]
+                if remainingDataCount < length {
+                    partialPacket = (
+                        interleavedData, channel, length - UInt16(interleavedData.count)
+                    )
+                } else {
+                    sendInterleaved(channel: channel, data: interleavedData)
+                }
+                ptr += 4 + Int(length)
+            } else {
+                // RTSP packet
+                let len = handleRTSPPacket(data, address: address)
+                ptr += len
             }
         }
     }
@@ -846,9 +857,9 @@ class RTSPClientConnection {
         guard let rtspSession = sessions[rtspSessionId] else {
             return
         }
-        for (streamId, rtpSession) in rtspSession.rtpSessions {
+        print("Tearing down RTSP session \(rtspSessionId)")
+        for (_, rtpSession) in rtspSession.rtpSessions {
             rtpSession.tearDown()
-            print("Tearing down RTP session \(rtspSessionId) stream \(streamId)")
         }
         sessions.removeValue(forKey: rtspSessionId)
     }
