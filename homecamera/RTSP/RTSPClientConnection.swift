@@ -472,7 +472,7 @@ class RTSPClientConnection {
             nil,
             socketHandle,
             CFSocketCallBackType.dataCallBack.rawValue,
-            { (s, callbackType, address, data, info) in
+            { (_, callbackType, address, data, info) in
                 guard let info, let address else { return }
 
                 let conn = Unmanaged<RTSPClientConnection>.fromOpaque(info).takeUnretainedValue()
