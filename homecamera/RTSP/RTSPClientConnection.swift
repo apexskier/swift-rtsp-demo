@@ -480,6 +480,15 @@ class RTSPClientConnection {
             },
             &context
         )
+
+        var t: Int32 = 1
+        setsockopt(
+            socketHandle,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &t,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
         self.rls = CFSocketCreateRunLoopSource(nil, socketInbound, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), self.rls, .commonModes)
     }
