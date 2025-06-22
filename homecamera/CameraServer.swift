@@ -19,8 +19,49 @@ final class CameraServer: NSObject {
     let pipeline = PassthroughSubject<CMSampleBuffer, Never>()
 
     var session: AVCaptureSession? = nil
+    let audioDeviceDiscovery = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [
+            .microphone,
+            .builtInWideAngleCamera,
+            .builtInUltraWideCamera,
+            .builtInTelephotoCamera,
+            // .builtInDualCamera,
+            // .builtInDualWideCamera,
+            // .builtInTripleCamera,
+            .continuityCamera,
+
+            // #if os(macOS)
+            // .deskViewCamera,
+            // #endif
+            .external,
+        ],
+        mediaType: .audio,
+        position: .unspecified
+    )
+    var audioDevice = AVCaptureDevice.default(for: .audio) {
+        didSet {
+            guard
+                let session,
+                let audioDevice,
+                let audioInput = try? AVCaptureDeviceInput(device: audioDevice)
+            else { return }
+            session.beginConfiguration()
+            defer {
+                session.commitConfiguration()
+            }
+            session.inputs.forEach { input in
+                session.removeInput(input)
+            }
+            session.addInput(audioInput)
+            if let videoDevice, let videoInput = try? AVCaptureDeviceInput(device: videoDevice) {
+                session.addInput(videoInput)
+            }
+            setupRotationManager()
+        }
+    }
     let videoDeviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
+            .microphone,
             .builtInWideAngleCamera,
             .builtInUltraWideCamera,
             .builtInTelephotoCamera,
@@ -52,6 +93,9 @@ final class CameraServer: NSObject {
                 session.removeInput($0)
             }
             session.addInput(videoInput)
+            if let audioDevice, let audioInput = try? AVCaptureDeviceInput(device: audioDevice) {
+                session.addInput(audioInput)
+            }
             setupRotationManager()
         }
     }
@@ -78,6 +122,13 @@ final class CameraServer: NSObject {
         else { return }
         session.addInput(videoInput)
 
+        if let audioDevice,
+            let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+            session.canAddInput(audioInput)
+        {
+            session.addInput(audioInput)
+        }
+
         // Create an output with self as delegate
         captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
         let videoOutput = AVCaptureVideoDataOutput()
@@ -91,6 +142,12 @@ final class CameraServer: NSObject {
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
             self.videoOutput = videoOutput
+        }
+
+        let audioOutput = AVCaptureAudioDataOutput()
+        audioOutput.setSampleBufferDelegate(self, queue: captureQueue)
+        if session.canAddOutput(audioOutput) {
+            session.addOutput(audioOutput)
         }
 
         let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
@@ -178,7 +235,9 @@ final class CameraServer: NSObject {
     }
 }
 
-extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
+extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
+    AVCaptureAudioDataOutputSampleBufferDelegate
+{
     func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,

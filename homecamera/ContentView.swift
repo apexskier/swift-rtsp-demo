@@ -99,6 +99,48 @@ struct CameraPickerToolbarItem: ToolbarContent {
     }
 }
 
+struct MicrophonePickerToolbarItem: ToolbarContent {
+    var cameraServer: CameraServer
+
+    var body: some ToolbarContent {
+        ToolbarItem {
+            Menu {
+                Picker(
+                    "Microphone",
+                    selection: .init(
+                        get: {
+                            cameraServer.audioDevice?.uniqueID
+                        },
+                        set: { newValue in
+                            if let newValue {
+                                cameraServer.audioDevice = AVCaptureDevice(
+                                    uniqueID: newValue
+                                )
+                            } else {
+                                cameraServer.audioDevice = nil
+                            }
+                        }
+                    )
+                ) {
+                    Text("Select Microphone").tag(nil as String?)
+                        .selectionDisabled()
+                    ForEach(cameraServer.audioDeviceDiscovery.devices, id: \.uniqueID) {
+                        device in
+                        Text(device.localizedName)
+                            .tag(device.uniqueID)
+                            .selectionDisabled(!device.isConnected)
+                    }
+                }
+            } label: {
+                Label(
+                    "Microphone",
+                    systemImage: "microphone.fill"
+                )
+            }
+        }
+    }
+}
+
 struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
@@ -143,6 +185,9 @@ struct ContentView: View {
                 BatterySaverToolbarItem()
                 if cameraServer.videoDeviceDiscovery.devices.count > 1 {
                     CameraPickerToolbarItem(cameraServer: cameraServer)
+                }
+                if cameraServer.audioDeviceDiscovery.devices.count > 1 {
+                    MicrophonePickerToolbarItem(cameraServer: cameraServer)
                 }
             }
         }
