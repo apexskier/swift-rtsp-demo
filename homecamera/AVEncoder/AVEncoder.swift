@@ -119,7 +119,7 @@ final class AVEncoder: @unchecked Sendable {
             }
         }
         let prestime = sampleBuffer.presentationTimeStamp
-        let dPTS = Double(prestime.value) / Double(prestime.timescale)
+        let dPTS = Double(CMTimeGetSeconds(prestime))
         timesQueue.sync {
             times.append(dPTS)
         }
