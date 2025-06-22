@@ -210,6 +210,7 @@ struct RTCPMessage {
         var ptr = data.startIndex
         guard data[ptr] & 0b11000000 == 0b10000000 else {  // version should be 2
             print("RTCP packet version is not 2 \(data.map({ String(format: "%02hhx", $0) }).joined().uppercased())")
+            // TODO: getting an error here - when receiving interleaved packets, there can be more than one interleaved message within the same frame. I'm stripping the first interleaved header but not the subsequent ones for other messages.
             return nil
         }
         // let padding = data[ptr] & 0b00100000 != 0

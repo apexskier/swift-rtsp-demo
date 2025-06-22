@@ -188,6 +188,7 @@ final class RTPSessionUDP: RTSPSessionProto {
                 switch callbackType {
                 case .dataCallBack:
                     if let data {
+                        // TODO: does this receive multiple RTCP packets in a single frame or not?
                         sessionWrapper.session?
                             .onRTCP(
                                 Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue() as Data
@@ -330,7 +331,6 @@ final class RTPSession {
     ) {
         assert(payloadType < 0b01111111, "Payload type must be less than 7 bits")
         packet[packet.startIndex] = 0b10000000  // v=2, no padding, no extension, no CSRCs
-        let payloadType: UInt8 = payloadType
         let marker: UInt8 = bMarker ? 0b10000000 : 0
         packet[packet.startIndex.advanced(by: 1)] = payloadType | marker
 
@@ -505,7 +505,7 @@ class RTSPClientConnection {
 
     private var partialPacket: (data: Data, channel: UInt8, left: UInt16)?
 
-    private func sendInterleaved(channel: UInt8, data: Data) {
+    private func onInterleaved(channel: UInt8, data: Data) {
         for (_, rtspSession) in sessions {
             if rtspSession.state == .playing {
                 for (_, rtpSession) in rtspSession.rtpSessions {
@@ -550,7 +550,7 @@ class RTSPClientConnection {
                 if data.count < Int(partialPacket.left) {
                     partialPacket.left -= UInt16(data.count)
                 } else {
-                    sendInterleaved(channel: partialPacket.channel, data: partialPacket.data)
+                    onInterleaved(channel: partialPacket.channel, data: partialPacket.data)
                     self.partialPacket = nil
                 }
                 ptr += data.count
@@ -564,7 +564,7 @@ class RTSPClientConnection {
                         interleavedData, channel, length - UInt16(interleavedData.count)
                     )
                 } else {
-                    sendInterleaved(channel: channel, data: interleavedData)
+                    onInterleaved(channel: channel, data: interleavedData)
                 }
                 ptr += 4 + Int(length)
             } else {
