@@ -455,7 +455,9 @@ class RTSPClientConnection {
     private var sessions = [String: RTSPSession]()
 
     private let videoPayloadType: UInt8 = 96
+    private let audioPayloadType: UInt8 = 97
     private let videoStreamId = "streamid=1"
+    private let audioStreamId = "streamid=2"
 
     public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
@@ -624,7 +626,7 @@ class RTSPClientConnection {
                 }
 
                 let streamId = url.path().trimmingPrefix("/")
-                if streamId != videoStreamId {
+                if streamId != audioStreamId && streamId != videoStreamId {
                     print("unknown stream id in setup: \(url.path())")
                     response = msg.createResponse(code: 404, text: "Stream ID not recognised")
                 } else if rtpSessions.rtpSessions[String(streamId)] != nil {
@@ -789,7 +791,47 @@ class RTSPClientConnection {
             "a=Width:integer;\(cx)",
             "a=Height:integer;\(cy)",
             "a=fmtp:\(videoPayloadType) packetization-mode=1;profile-level-id=\(profileLevelID);sprop-parameter-sets=\(spsBase64),\(ppsBase64)",
+            "m=audio 0 RTP/AVP \(audioPayloadType)",
+            "a=control:\(audioStreamId)",
+            "a=rtpmap:\(audioPayloadType) MPEG4-GENERIC/\(AACEncoder.audioSampleRate)/2",
+            "a=fmtp:\(audioPayloadType) streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1210; SizeLength=13; IndexLength=3; IndexDeltaLength=3;",
         ]
+    }
+
+    func onAudioData(_ aacData: Data, pts: Double) {
+        // RFC 3640 (RFC 6461 is for LATM, not used here)
+        // One AU per RTP packet, no fragmentation
+        for rtspSession in sessions.values {
+            guard rtspSession.state == .playing,
+                let rtpSession = rtspSession.rtpSessions[audioStreamId]
+            else { continue }
+
+            var payload = Data(capacity: aacData.count + 4)
+            // AU-headers-length: 16 bits (always 16 for one AU)
+            payload.append(value: UInt16(16).bigEndian)
+            // AU-header: AU-size (13 bits) | AU-Index (3 bits, 0)
+            let auSizeBits = UInt16(aacData.count * 8)
+            let auHeader: UInt16 = (auSizeBits << 3)
+            payload.append(value: auHeader.bigEndian)
+            payload.append(aacData)
+            // assert payload isn't too big
+            guard payload.count + rtpHeaderSize <= maxPacketSize else {
+                print("AAC payload too big for RTP packet")
+                return
+            }
+
+            // Compose RTP packet
+            var packet = Data(count: rtpHeaderSize + payload.count)
+            rtpSession.writeHeader(
+                &packet,
+                marker: true,  // always true for AAC (one AU per packet)
+                time: pts,
+                payloadType: audioPayloadType,
+                clock: Int(AACEncoder.audioSampleRate)
+            )
+            packet.replaceSubrange(rtpHeaderSize..., with: payload)
+            rtpSession.sendPacket(packet)
+        }
     }
 
     func onVideoData(_ data: [Data], time pts: Double) {

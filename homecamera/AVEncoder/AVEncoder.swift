@@ -62,6 +62,7 @@ final class AVEncoder: @unchecked Sendable {
     private var frames: [EncodedFrame] = []
 
     private var outputBlock: EncoderHandler?
+    private var audioBlock: ((Data, Double) -> Void)?
     private var paramsBlock: ParamHandler?
     private var outputSampleBuffer: ((CMSampleBuffer) -> Void)?
 
@@ -70,6 +71,7 @@ final class AVEncoder: @unchecked Sendable {
     private var firstpts: Double = -1
 
     private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.self")
+    private let aacEncoder = AACEncoder(inputChannels: 2)
 
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
@@ -90,16 +92,24 @@ final class AVEncoder: @unchecked Sendable {
 
     func encode(
         withBlock block: @escaping EncoderHandler,
+        audioBlock: @escaping (Data, Double) -> Void,
         onParams paramsHandler: @escaping ParamHandler,
         outputSampleBuffer: @escaping (CMSampleBuffer) -> Void
     ) {
         outputBlock = block
+        self.audioBlock = audioBlock
         paramsBlock = paramsHandler
         self.outputSampleBuffer = outputSampleBuffer
         needParams = true
         pendingNALU = nil
         firstpts = -1
         bitspersecond = 0
+    }
+
+    func encodeAudio(frame sampleBuffer: CMSampleBuffer) {
+        if let result = aacEncoder?.encode(pcmBuffer: sampleBuffer) {
+            self.audioBlock?(result.data, CMTimeGetSeconds(result.pts))
+        }
     }
 
     func encodeVideo(frame sampleBuffer: CMSampleBuffer) {

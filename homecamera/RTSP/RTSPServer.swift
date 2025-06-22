@@ -93,6 +93,14 @@ class RTSPServer {
         }
     }
 
+    func onAudioData(_ data: Data, pts: Double) {
+        selfQueue.sync {
+            for conn in connections {
+                conn.onAudioData(data, pts: pts)
+            }
+        }
+    }
+
     func shutdownConnection(_ conn: RTSPClientConnection) {
         selfQueue.sync {
             print("Client disconnected")

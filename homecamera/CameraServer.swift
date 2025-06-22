@@ -173,6 +173,11 @@ final class CameraServer: NSObject {
                 rtsp.bitrate = encoder.bitspersecond
                 rtsp.onVideoData(data, time: pts)
             }
+        } audioBlock: { [weak self] (data, pts) in
+            guard let self else { return }
+            if let rtsp {
+                rtsp.onAudioData(data, pts: pts)
+            }
         } onParams: { [weak self] data in
             guard let self else { return }
             rtsp = RTSPServer(configData: data)
@@ -246,6 +251,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         from connection: AVCaptureConnection
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            encoder?.encodeAudio(frame: sampleBuffer)
             return
         }
 
