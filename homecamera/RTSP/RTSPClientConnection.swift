@@ -297,7 +297,7 @@ final class RTPSession {
     var rtpBase = UInt64.zero
     var ptsBase: Double = 0
     var ntpBase: UInt64 = 0
-    var clock: Int
+    var videoClock: Int
     private(set) var sourceDescription: String? = nil
     var sentRTCP: Date? = nil
     var packetsReported = 0
@@ -315,15 +315,24 @@ final class RTPSession {
         sessionConnection: RTSPSessionProto,
         receiverReports: PassthroughSubject<RRPacket.Block, Never>
     ) {
-        self.clock = clock
+        self.videoClock = clock
         self.sessionConnection = sessionConnection
         self.receiverReports = receiverReports
     }
 
     // RFC 3550, 5.1
-    func writeHeader(_ packet: inout Data, marker bMarker: Bool, time pts: Double) {
-        packet[packet.startIndex] = 0b10000000  // v=2
-        packet[packet.startIndex.advanced(by: 1)] = bMarker ? (0b1100000 | 0b10000000) : 0b1100000
+    func writeHeader(
+        _ packet: inout Data,
+        marker bMarker: Bool,
+        time pts: Double,
+        payloadType: UInt8,
+        clock: Int
+    ) {
+        assert(payloadType < 0b01111111, "Payload type must be less than 7 bits")
+        packet[packet.startIndex] = 0b10000000  // v=2, no padding, no extension, no CSRCs
+        let payloadType: UInt8 = payloadType
+        let marker: UInt8 = bMarker ? 0b10000000 : 0
+        packet[packet.startIndex.advanced(by: 1)] = payloadType | marker
 
         packet.replace(
             at: 2,
@@ -397,7 +406,7 @@ final class RTPSession {
             //     """
             // )
 
-            if let message = RTCPMessage(data: data[ptr...], clock: clock) {
+            if let message = RTCPMessage(data: data[ptr...]) {
                 ptr += Int(message.byteLength)
 
                 switch message.packet {
@@ -448,6 +457,7 @@ class RTSPClientConnection {
     // map of RTSP Sesssion IDs to map of Stream IDs to RTPSession objects
     private var sessions = [String: RTSPSession]()
 
+    private let videoPayloadType: UInt8 = 96
     private let videoStreamId = "streamid=1"
 
     public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
@@ -767,7 +777,6 @@ class RTSPClientConnection {
             return String(cString: inet_ntoa(sockaddr.sin_addr))
         }
         let packets = (server.bitrate / (maxPacketSize * 8)) + 1
-        let videoPayloadType = 96
         return [
             "v=0",
             "o=- \(verid) \(verid) IN IP4 \(ipString)",
@@ -808,7 +817,13 @@ class RTSPClientConnection {
                 if countBytes < maxSinglePacket {
                     var packet = Data(count: maxPacketSize)
 
-                    rtpSession.writeHeader(&packet, marker: bLast, time: pts)
+                    rtpSession.writeHeader(
+                        &packet,
+                        marker: bLast,
+                        time: pts,
+                        payloadType: videoPayloadType,
+                        clock: videoClock
+                    )
                     packet.replaceSubrange(
                         packet.startIndex.advanced(by: rtpHeaderSize)...,
                         with: nalu
@@ -833,7 +848,13 @@ class RTSPClientConnection {
 
                         let countThis = min(countBytes, maxFragmentPacket)
                         let bEnd = countThis == countBytes
-                        rtpSession.writeHeader(&packet, marker: bLast && bEnd, time: pts)
+                        rtpSession.writeHeader(
+                            &packet,
+                            marker: bLast && bEnd,
+                            time: pts,
+                            payloadType: videoPayloadType,
+                            clock: videoClock
+                        )
 
                         packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
                         var fuHeader = naluHeader & 0x1f

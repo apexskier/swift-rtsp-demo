@@ -206,7 +206,7 @@ struct RTCPMessage {
     let byteLength: UInt16
     let packet: PacketContents
 
-    init?(data: Data, clock: Int) {
+    init?(data: Data) {
         var ptr = data.startIndex
         guard data[ptr] & 0b11000000 == 0b10000000 else {  // version should be 2
             print("RTCP packet version is not 2 \(data.map({ String(format: "%02hhx", $0) }).joined().uppercased())")
