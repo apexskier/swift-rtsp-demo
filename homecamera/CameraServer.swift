@@ -42,16 +42,16 @@ final class CameraServer: NSObject {
             guard
                 let session,
                 let videoDevice,
-                let input = try? AVCaptureDeviceInput(device: videoDevice)
+                let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
             else { return }
             session.beginConfiguration()
             defer {
                 session.commitConfiguration()
             }
-            session.inputs.forEach { input in
-                session.removeInput(input)
+            session.inputs.forEach {
+                session.removeInput($0)
             }
-            session.addInput(input)
+            session.addInput(videoInput)
             setupRotationManager()
         }
     }
@@ -74,29 +74,30 @@ final class CameraServer: NSObject {
         // Create capture device with video input
         let session = AVCaptureSession()
         guard let videoDevice,
-            let rotationManager,
-            let input = try? AVCaptureDeviceInput(device: videoDevice),
-            session.canAddInput(input)
+            let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+            session.canAddInput(videoInput)
         else { return }
-        session.addInput(input)
+        session.addInput(videoInput)
 
         // Create an output with self as delegate
         captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
         let videoOutput = AVCaptureVideoDataOutput()
         videoOutput.setSampleBufferDelegate(self, queue: captureQueue)
         videoOutput.videoSettings = [
-            // TODO: I think this is inefficient since H246 doesn't support it directly and it's converting internally. Saw this in the docs somewhere.
+            // TODO: I think this is inefficient since H264 doesn't support it directly and it's converting internally. Saw this in the docs somewhere.
             // I'm doing this now to share memory with a CGContext to draw directly into it
             kCVPixelBufferPixelFormatTypeKey as String:
                 kCVPixelFormatType_32BGRA
         ]
-        guard session.canAddOutput(videoOutput) else { return }
-        session.addOutput(videoOutput)
+        if session.canAddOutput(videoOutput) {
+            session.addOutput(videoOutput)
+            self.videoOutput = videoOutput
+        }
 
         let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
         let height: CGFloat
         let width: CGFloat
-        if (Int(rotationManager.videoRotationAngleForHorizonLevelCapture) / 90) % 2 == 1 {
+        if (Int(rotationManager?.videoRotationAngleForHorizonLevelCapture ?? 0) / 90) % 2 == 1 {
             // portrait
             height = dimensions.width
             width = dimensions.height
@@ -128,14 +129,16 @@ final class CameraServer: NSObject {
         session.startRunning()
 
         self.session = session
-        self.videoOutput = videoOutput
     }
 
     private var rotationObservation: NSKeyValueObservation? = nil
 
     private func setupRotationManager() {
         guard let videoDevice else { return }
-        rotationManager = AVCaptureDevice.RotationCoordinator(device: videoDevice, previewLayer: nil)
+        rotationManager = AVCaptureDevice.RotationCoordinator(
+            device: videoDevice,
+            previewLayer: nil
+        )
         rotationObservation = rotationManager?
             .observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) {
                 [weak self] obj, change in
