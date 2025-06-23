@@ -291,30 +291,26 @@ extension RTPSessionUDP: CustomDebugStringConvertible {
 
 final class RTPSession {
     let ssrc = UInt32.random(in: UInt32.min...UInt32.max)
-    var packets = 0
-    let sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
-    var bytesSent = 0
-    var rtpBase: UInt64 = 0
-    var ptsBase: Double = 0
-    var ntpBase: UInt64 = 0
+    private var packets = 0
+    private let sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
+    private var bytesSent = 0
+    private var rtpBase: UInt64 = 0
+    private var ptsBase: Double = 0
+    private var ntpBase: UInt64 = 0
     private(set) var sourceDescription: String? = nil
-    var sentRTCP: Date? = nil
-    var packetsReported = 0
-    var bytesReported = 0
+    private var sentRTCP: Date? = nil
+    private var packetsReported = 0
+    private var bytesReported = 0
 
     fileprivate var sessionConnection: RTSPSessionProto
-    var receiverReports: PassthroughSubject<RRPacket.Block, Never>
+    var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
     private let selfQueue = DispatchQueue(
         label: "\(Bundle.main.bundleIdentifier!).RTPSession.self"
     )
 
-    fileprivate init(
-        sessionConnection: RTSPSessionProto,
-        receiverReports: PassthroughSubject<RRPacket.Block, Never>
-    ) {
+    fileprivate init(sessionConnection: RTSPSessionProto) {
         self.sessionConnection = sessionConnection
-        self.receiverReports = receiverReports
     }
 
     // RFC 3550, 5.1
@@ -440,7 +436,6 @@ class RTSPClientConnection {
     private var rls: CFRunLoopSource?
     private var bFirst: Bool = true
     private let videoClock = 90000  // H264 clock frequency
-    private(set) var sourceDescription: String? = nil
     private let selfQueue = DispatchQueue(
         label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
     )
@@ -451,14 +446,12 @@ class RTSPClientConnection {
     }
 
     // map of RTSP Sesssion IDs to map of Stream IDs to RTPSession objects
-    private var sessions = [String: RTSPSession]()
+    private(set) var sessions = [String: RTSPSession]()
 
     private let videoPayloadType: UInt8 = 96
     private let audioPayloadType: UInt8 = 97
     private let videoStreamId = "streamid=1"
     private let audioStreamId = "streamid=2"
-
-    public var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
 
     init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
         self.server = server
@@ -708,10 +701,7 @@ class RTSPClientConnection {
                 rtp: portRTP,
                 rtcp: portRTCP
             )
-            let session = RTPSession(
-                sessionConnection: sessionConnection,
-                receiverReports: receiverReports
-            )
+            let session = RTPSession(sessionConnection: sessionConnection)
             sessionConnection.sessionWrapper.session = session
             return session
         }
@@ -730,7 +720,6 @@ class RTSPClientConnection {
                     socket: socketInbound,
                     address: address
                 ),
-                receiverReports: receiverReports
             )
         }
 

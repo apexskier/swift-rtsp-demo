@@ -9,7 +9,12 @@
 import AVFoundation
 import Combine
 import Foundation
+
+#if canImport(UIKit)
 import UIKit
+#else
+import CoreImage
+#endif
 
 @Observable
 final class CameraServer: NSObject {
@@ -22,17 +27,6 @@ final class CameraServer: NSObject {
     let audioDeviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
             .microphone,
-            .builtInWideAngleCamera,
-            .builtInUltraWideCamera,
-            .builtInTelephotoCamera,
-            // .builtInDualCamera,
-            // .builtInDualWideCamera,
-            // .builtInTripleCamera,
-            .continuityCamera,
-
-            // #if os(macOS)
-            // .deskViewCamera,
-            // #endif
             .external,
         ],
         mediaType: .audio,
@@ -61,25 +55,36 @@ final class CameraServer: NSObject {
             setupRotationManager()
         }
     }
+    #if os(macOS)
+    let videoDeviceDiscovery = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [
+            .microphone,
+            .builtInWideAngleCamera,
+            .continuityCamera,
+            .deskViewCamera,
+            .external,
+        ],
+        mediaType: .video,
+        position: .unspecified
+    )
+    #else
     let videoDeviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
             .microphone,
             .builtInWideAngleCamera,
             .builtInUltraWideCamera,
             .builtInTelephotoCamera,
+            // ignore these cameras as they duplicate the more specific ones above
             // .builtInDualCamera,
             // .builtInDualWideCamera,
             // .builtInTripleCamera,
             .continuityCamera,
-
-            // #if os(macOS)
-            // .deskViewCamera,
-            // #endif
             .external,
         ],
         mediaType: .video,
         position: .unspecified
     )
+    #endif
     var videoDevice = AVCaptureDevice.default(for: .video) {
         didSet {
             guard
@@ -354,6 +359,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             return
         }
 
+        #if canImport(UIKit)
         UIGraphicsPushContext(context)
         // TODO: don't recreate, doing this because of concurrency warnings
         let font = UIFont.systemFont(ofSize: 36)
@@ -378,6 +384,7 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
 
         context.restoreGState()
         UIGraphicsPopContext()
+        #endif
 
         var timingInfo = CMSampleTimingInfo()
         CMSampleBufferGetSampleTimingInfo(sampleBuffer, at: 0, timingInfoOut: &timingInfo)

@@ -8,8 +8,8 @@
 import AVFoundation
 import SwiftUI
 
-struct ConnectionView: View {
-    var connection: RTSPClientConnection
+struct RTPView: View {
+    var rtpSession: RTPSession
 
     @State
     private var jitter: Double? = nil
@@ -18,7 +18,7 @@ struct ConnectionView: View {
 
     var body: some View {
         VStack {
-            Text(connection.sourceDescription ?? "unnamed")
+            Text("\(rtpSession.sourceDescription ?? "Unknown")")
             VStack {
                 if let jitter {
                     Text("Jitter: \(String(format: "%.2f", jitter * 1000)) ms")
@@ -29,9 +29,21 @@ struct ConnectionView: View {
             }
             .font(.footnote)
         }
-        .onReceive(connection.receiverReports) { block in
+        .onReceive(rtpSession.receiverReports) { block in
             jitter = block.jitter
             packetLoss = block.fractionLost
+        }
+    }
+}
+
+struct ConnectionView: View {
+    var connection: RTSPClientConnection
+
+    var body: some View {
+        ForEach(connection.sessions.sorted(by: { $0.key > $1.key }), id: \.key) { sessionId, session in
+            ForEach(session.rtpSessions.sorted(by: { $0.key > $1.key }), id: \.value.ssrc) { rtpStreamId, rtpSession in
+                RTPView(rtpSession: rtpSession)
+            }
         }
     }
 }
