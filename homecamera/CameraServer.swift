@@ -60,7 +60,6 @@ final class CameraServer: NSObject {
     private var captureQueue: DispatchQueue? = nil
     private var encoder: AVEncoder? = nil
     var rtsp: RTSPServer? = nil
-    private var firstCaptureTimestamp: Date? = nil
 
     // TODO: observe device discovery changes using KV
 
@@ -185,9 +184,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        if firstCaptureTimestamp == nil {
-            firstCaptureTimestamp = .init(timeIntervalSinceNow: -CACurrentMediaTime())
-        }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
@@ -291,8 +287,10 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
             NSAttributedString.Key.foregroundColor: UIColor.white,
             NSAttributedString.Key.backgroundColor: UIColor.black,
         ]
-        let timestamp = sampleBuffer.presentationTimeStamp
-        let d = Date(timeInterval: timestamp.seconds, since: firstCaptureTimestamp!)
+        let d = Date(
+            timeInterval: sampleBuffer.presentationTimeStamp.seconds,
+            since: .init(timeIntervalSinceNow: -CACurrentMediaTime())
+        )
         let string = NSAttributedString(
             string: d.formatted(date: .abbreviated, time: .standard),
             attributes: fontAttributes
