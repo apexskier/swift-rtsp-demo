@@ -103,7 +103,6 @@ class AACEncoder {
             )
         )
         var ioOutputDataPackets: UInt32 = 1
-        // Converter callback context
         var converterContext = ConverterContext(
             inputBufferList: inputBufferList,
             consumed: false
