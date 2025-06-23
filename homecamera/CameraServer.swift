@@ -174,10 +174,10 @@ final class CameraServer: NSObject {
 
         // Create an encoder
         let encoder = AVEncoder(height: Int(height), width: Int(width), audioChannels: channels)
-        encoder.encode { [weak self] data, pts in
+        encoder.setup { [weak self] data, pts in
             guard let self else { return }
-            if let rtsp {
-                rtsp.bitrate = encoder.bitspersecond
+            if let rtsp, let bitrate = encoder.videoEncoder?.bitspersecond {
+                rtsp.bitrate = bitrate
                 rtsp.onVideoData(data, time: pts)
             }
         } audioBlock: { [weak self] (data, pts) in
@@ -212,8 +212,8 @@ final class CameraServer: NSObject {
         rotationObservation = rotationManager?
             .observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) {
                 [weak self] obj, change in
-                guard let self,
-                    let encoder,
+                guard
+                    let encoder = self?.encoder?.videoEncoder,
                     let device = obj.device,
                     let v = change.newValue
                 else {
