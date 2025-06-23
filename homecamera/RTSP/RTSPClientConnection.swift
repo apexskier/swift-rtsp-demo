@@ -3,9 +3,6 @@ import CoreFoundation
 import Foundation
 import Network
 
-private let base64Mapping = Array(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8
-)
 private let maxPacketSize = 1200
 private let rtpHeaderSize = 12
 
