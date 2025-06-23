@@ -40,8 +40,12 @@ struct ConnectionView: View {
     var connection: RTSPClientConnection
 
     var body: some View {
-        ForEach(connection.sessions.sorted(by: { $0.key > $1.key }), id: \.key) { sessionId, session in
-            ForEach(session.rtpSessions.sorted(by: { $0.key > $1.key }), id: \.value.ssrc) { rtpStreamId, rtpSession in
+        ForEach(connection.sessions.sorted(by: { $0.key > $1.key }), id: \.key) {
+            sessionId,
+            session in
+            ForEach(session.rtpSessions.sorted(by: { $0.key > $1.key }), id: \.value.ssrc) {
+                rtpStreamId,
+                rtpSession in
                 RTPView(rtpSession: rtpSession)
             }
         }
@@ -156,50 +160,67 @@ struct MicrophonePickerToolbarItem: ToolbarContent {
 struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
+    @State
+    private var showConnectionsSheet = false
 
     var body: some View {
         NavigationStack {
-            HStack {
-                VStack {
-                    if let session = cameraServer.session {
-                        CameraPreview(session: session)
-                            .ignoresSafeArea()
-                    } else {
-                        ProgressView("Starting camera…")
+            CameraPreview2(pipeline: cameraServer.pipeline)
+                .toolbar {
+                    ToolbarItem {
+                        if let urlString = cameraServer.getURL(),
+                            let url = URL(string: urlString)
+                        {
+                            ShareLink(item: url) {
+                                Label("Copy URL", systemImage: "network")
+                            }
+                        } else {
+                            Button {
+                            } label: {
+                                Label("Copy URL", systemImage: "network.slash")
+                            }
+                            .disabled(true)
+                        }
                     }
-
-                    CameraPreview2(pipeline: cameraServer.pipeline)
+                    BatterySaverToolbarItem()
+                    if cameraServer.videoDeviceDiscovery.devices.count > 1 {
+                        CameraPickerToolbarItem(cameraServer: cameraServer)
+                    }
+                    if cameraServer.audioDeviceDiscovery.devices.count > 1 {
+                        MicrophonePickerToolbarItem(cameraServer: cameraServer)
+                    }
+                    ToolbarItem {
+                        Button {
+                            showConnectionsSheet = true
+                        } label: {
+                            Label("Connections", systemImage: "rectangle.connected.to.line.below")
+                        }
+                        .badge(cameraServer.rtsp?.connections.count ?? 0)
+                    }
                 }
-                VStack {
+        }
+        .sheet(isPresented: $showConnectionsSheet) {
+            NavigationStack {
+                VStack(alignment: .leading) {
                     if let rtsp = cameraServer.rtsp {
                         ForEach(rtsp.connections, id: \.socketInbound) { connection in
                             ConnectionView(connection: connection)
-                        }
-                    }
-                }
-            }
-            .toolbar {
-                ToolbarItem {
-                    if let urlString = cameraServer.getURL(),
-                        let url = URL(string: urlString)
-                    {
-                        ShareLink(item: url) {
-                            Label("Copy URL", systemImage: "network")
+                                .padding(.bottom)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
-                        Button {
-                        } label: {
-                            Label("Copy URL", systemImage: "network.slash")
-                        }
-                        .disabled(true)
+                        Text("No connections.")
                     }
+                    Spacer()
                 }
-                BatterySaverToolbarItem()
-                if cameraServer.videoDeviceDiscovery.devices.count > 1 {
-                    CameraPickerToolbarItem(cameraServer: cameraServer)
-                }
-                if cameraServer.audioDeviceDiscovery.devices.count > 1 {
-                    MicrophonePickerToolbarItem(cameraServer: cameraServer)
+                .padding()
+                .navigationTitle("Connections")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") {
+                            showConnectionsSheet = false
+                        }
+                    }
                 }
             }
         }
