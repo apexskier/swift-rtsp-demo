@@ -313,10 +313,7 @@ final class AVEncoder: @unchecked Sendable {
 
         // called whenever there is more data to read in the main encoder output file.
 
-        let offset = try! inputFile.offset()
-        // let st = try! inputFile.seekToEnd()
-        // try! inputFile.seek(toOffset: offset)
-        guard
+        guard let offset = try? inputFile.offset(),
             let st = try? FileManager.default.attributesOfItem(atPath: writer.path)[.size]
                 as? UInt64
         else {

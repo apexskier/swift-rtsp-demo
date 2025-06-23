@@ -3,16 +3,19 @@ import Foundation
 
 // VideoEncoder: Handles AVAssetWriter setup and frame encoding for H.264 video
 final class VideoEncoder: Sendable {
-    private let writer: AVAssetWriter!
+    private let writer: AVAssetWriter
     private let writerInput: AVAssetWriterInput
     let path: String
 
     // Initialize encoder for a given file path, height, and width
-    init(path: String, height: Int, width: Int) {
+    init?(path: String, height: Int, width: Int) {
         self.path = path
         try? FileManager.default.removeItem(atPath: path)
         let url = URL(fileURLWithPath: path)
-        writer = try? AVAssetWriter(url: url, fileType: .mov)
+        guard let writer = try? AVAssetWriter(url: url, fileType: .mov) else {
+            return nil
+        }
+        self.writer = writer
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: NSNumber(value: width),
