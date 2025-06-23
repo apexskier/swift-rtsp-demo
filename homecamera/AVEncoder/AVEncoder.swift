@@ -256,7 +256,10 @@ final class AVEncoder: @unchecked Sendable {
 
         // re-read mdat length
         inputFile.seek(toFileOffset: posMDAT)
-        let hdr = inputFile.readData(ofLength: 4)
+        guard let hdr = try? inputFile.read(upToCount: 4) else {
+            print("Error reading mdat length")
+            return
+        }
         let lenMDAT = hdr.read(as: UInt32.self).bigEndian
 
         // extract nalus from saved position to mdat end
@@ -302,7 +305,10 @@ final class AVEncoder: @unchecked Sendable {
                 inputFile.seek(toFileOffset: inputFile.offsetInFile - 4)
                 break
             }
-            let nalu = inputFile.readData(ofLength: Int(lenNALU))
+            guard let nalu = try? inputFile.read(upToCount: Int(lenNALU)) else {
+                print("Error reading NALU")
+                return
+            }
             cReady -= lenNALU
             onNALU(nalu)
         }
@@ -323,8 +329,7 @@ final class AVEncoder: @unchecked Sendable {
 
         // locate the mdat atom if needed
         while !foundMDAT && cReady > 8 {
-            if bytesToNextAtom == 0 {
-                let hdr = inputFile.readData(ofLength: 8)
+            if bytesToNextAtom == 0, let hdr = try? inputFile.read(upToCount: 8), !hdr.isEmpty {
                 let lenAtom = hdr.read(as: UInt32.self).bigEndian
                 let nameAtom = hdr.read(at: hdr.startIndex + 4, as: UInt32.self).bigEndian
                 if nameAtom == MP4AtomType("mdat") {

@@ -28,7 +28,7 @@ struct MP4Atom {
     // Read data at offset from atom start
     func read(at offset: UInt64 = 0, size: Int) -> Data {
         try? file.seek(toOffset: self.offset + offset)
-        return file.readData(ofLength: size)
+        return try! file.read(upToCount: size)!
     }
 
     // Get the next child atom, or nil if none
@@ -38,7 +38,10 @@ struct MP4Atom {
         }
 
         try? file.seek(toOffset: offset + nextChildOffset)
-        var data = file.readData(ofLength: 8)
+        guard var data = try? file.read(upToCount: 8) else {
+            print("Failed to read data at offset \(offset + nextChildOffset)")
+            return nil
+        }
         var cHeader = 8
         guard data.count == 8 else { return nil }
         var len = Int64(data.read(as: UInt32.self).bigEndian)
@@ -46,7 +49,10 @@ struct MP4Atom {
         if len == 1 {
             // 64-bit extended length
             cHeader += 8
-            data = file.readData(ofLength: 8)
+            guard let data = try? file.read(upToCount: 8) else {
+                print("Failed to read extended length data at offset \(offset + nextChildOffset)")
+                return nil
+            }
             len =
                 (Int64(data.read(as: UInt32.self).bigEndian) << 32)
                 + Int64(data.read(at: data.startIndex + 4, as: UInt32.self).bigEndian)
