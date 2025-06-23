@@ -5,6 +5,8 @@ import Network
 
 private let maxPacketSize = 1200
 private let rtpHeaderSize = 12
+// 2_208_988_800 is a fixed offset from 1900 to 1970.
+private let date1900 = Date(timeIntervalSince1970: -2_208_988_800)
 
 private enum RTSPSessionState {
     case setup, playing
@@ -292,10 +294,9 @@ final class RTPSession {
     var packets = 0
     let sequenceNumber = UInt16.random(in: UInt16.min...UInt16.max)
     var bytesSent = 0
-    var rtpBase = UInt64.zero
+    var rtpBase: UInt64 = 0
     var ptsBase: Double = 0
     var ntpBase: UInt64 = 0
-    var videoClock: Int
     private(set) var sourceDescription: String? = nil
     var sentRTCP: Date? = nil
     var packetsReported = 0
@@ -309,11 +310,9 @@ final class RTPSession {
     )
 
     fileprivate init(
-        clock: Int,
         sessionConnection: RTSPSessionProto,
         receiverReports: PassthroughSubject<RRPacket.Block, Never>
     ) {
-        self.videoClock = clock
         self.sessionConnection = sessionConnection
         self.receiverReports = receiverReports
     }
@@ -336,16 +335,17 @@ final class RTPSession {
             with: UInt16(truncatingIfNeeded: Int(sequenceNumber) + packets).bigEndian
         )
 
-        while rtpBase == 0 {
-            rtpBase = UInt64(UInt32.random(in: UInt32.min...UInt32.max))
+        if rtpBase == 0 {
+            rtpBase = UInt64(UInt32.random(in: 1...UInt32.max))
+
             ptsBase = pts
-            let now = Date()
-            // ntp is based on 1900. There's a known fixed offset from 1900 to 1970.
-            let ref = Date(timeIntervalSince1970: -2_208_988_800)
-            let interval = now.timeIntervalSince(ref)
+
+            // ntp is based on 1900
+            let interval = Date.now.timeIntervalSince(date1900)
             ntpBase = UInt64(interval * Double(1 << 32))
         }
         let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
+        print("\(rtp), \(self.sessionConnection)")
         packet.replace(
             at: packet.startIndex.advanced(by: 4),
             with: UInt32(truncatingIfNeeded: rtp).bigEndian
@@ -361,7 +361,7 @@ final class RTPSession {
             packets += 1
             bytesSent += packet.count
 
-            let now = Date()
+            let now = Date.now
             if sentRTCP == nil || now.timeIntervalSince(sentRTCP!) >= 1 {
                 var buf = Data(capacity: 7 * MemoryLayout<UInt32>.size)
                 buf += [
@@ -708,7 +708,6 @@ class RTSPClientConnection {
                 rtcp: portRTCP
             )
             let session = RTPSession(
-                clock: videoClock,
                 sessionConnection: sessionConnection,
                 receiverReports: receiverReports
             )
@@ -724,7 +723,6 @@ class RTSPClientConnection {
             let channelRTP = channels.first
         {
             return RTPSession(
-                clock: videoClock,
                 sessionConnection: RTPSessionInterleaved(
                     channelRTP: channelRTP,
                     channelRTCP: channels.count > 1 ? channels[1] : (channelRTP + 1),

@@ -38,7 +38,7 @@ struct MP4Atom {
         }
 
         try? file.seek(toOffset: offset + nextChildOffset)
-        guard var data = try? file.read(upToCount: 8) else {
+        guard let data = try? file.read(upToCount: 8) else {
             print("Failed to read data at offset \(offset + nextChildOffset)")
             return nil
         }
