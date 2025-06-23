@@ -214,11 +214,12 @@ final class CameraServer: NSObject {
                 [weak self] obj, change in
                 guard let self,
                     let encoder,
+                    let device = obj.device,
                     let v = change.newValue
                 else {
                     return
                 }
-                let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
+                let dimensions = device.activeFormat.formatDescription.presentationDimensions()
                 if (Int(v) / 90) % 2 == 1 {
                     // portrait
                     encoder.height = Int(dimensions.width)
