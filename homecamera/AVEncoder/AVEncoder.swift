@@ -102,7 +102,7 @@ final class AVEncoder: @unchecked Sendable {
         bitspersecond = 0
     }
 
-    func encode(frame sampleBuffer: CMSampleBuffer) {
+    func encodeVideo(frame sampleBuffer: CMSampleBuffer) {
         selfQueue.sync {
             if needParams {
                 // the avcC record is needed for decoding and it's not written to the file until

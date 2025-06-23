@@ -329,6 +329,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        encoder?.encode(frame: newSampleBuffer)
+        encoder?.encodeVideo(frame: newSampleBuffer)
     }
 }
