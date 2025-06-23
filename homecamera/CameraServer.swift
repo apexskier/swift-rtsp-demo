@@ -53,7 +53,9 @@ final class CameraServer: NSObject {
                 session.removeInput(input)
             }
             session.addInput(audioInput)
-            if let videoDevice, let videoInput = try? AVCaptureDeviceInput(device: videoDevice) {
+            if let videoDevice,
+                let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
+            {
                 session.addInput(videoInput)
             }
             setupRotationManager()

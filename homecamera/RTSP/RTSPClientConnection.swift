@@ -326,7 +326,7 @@ final class RTPSession {
         clock: Int
     ) {
         assert(payloadType < 0b01111111, "Payload type must be less than 7 bits")
-        packet[packet.startIndex] = 0b10000000  // v=2, no padding, no extension, no CSRCs
+        packet[packet.startIndex] = 0b10_000000  // v=2, no padding, no extension, no CSRCs
         let marker: UInt8 = bMarker ? 0b10000000 : 0
         packet[packet.startIndex.advanced(by: 1)] = payloadType | marker
 
