@@ -32,27 +32,35 @@ final class CameraServer: NSObject {
         mediaType: .audio,
         position: .unspecified
     )
-    var audioDevice = AVCaptureDevice.default(for: .audio) {
-        didSet {
+    var audioDevice: AVCaptureDevice? {
+        get {
+            if let id = UserDefaults.standard.string(forKey: "selectedAudioDeviceID"),
+               let device = AVCaptureDevice(uniqueID: id)
+            {
+                return device
+            }
+            return AVCaptureDevice.default(for: .audio)
+        }
+        set {
+            guard let newValue else { return }
+            UserDefaults.standard.set(newValue.uniqueID, forKey: "selectedAudioDeviceID")
             guard
                 let session,
-                let audioDevice,
-                let audioInput = try? AVCaptureDeviceInput(device: audioDevice)
+                let input = try? AVCaptureDeviceInput(device: newValue)
             else { return }
             session.beginConfiguration()
             defer {
                 session.commitConfiguration()
             }
-            session.inputs.forEach { input in
-                session.removeInput(input)
+            session.inputs.forEach {
+                session.removeInput($0)
             }
-            session.addInput(audioInput)
+            session.addInput(input)
             if let videoDevice,
-                let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
+               let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
             {
                 session.addInput(videoInput)
             }
-            setupRotationManager()
         }
     }
     #if os(macOS)
@@ -85,12 +93,21 @@ final class CameraServer: NSObject {
         position: .unspecified
     )
     #endif
-    var videoDevice = AVCaptureDevice.default(for: .video) {
-        didSet {
+    var videoDevice: AVCaptureDevice? {
+        get {
+            if let id = UserDefaults.standard.string(forKey: "selectedVideoDeviceID"),
+                let device = AVCaptureDevice(uniqueID: id)
+            {
+                return device
+            }
+            return AVCaptureDevice.default(for: .video)
+        }
+        set {
+            guard let newValue else { return }
+            UserDefaults.standard.set(newValue.uniqueID, forKey: "selectedVideoDeviceID")
             guard
                 let session,
-                let videoDevice,
-                let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
+                let input = try? AVCaptureDeviceInput(device: newValue)
             else { return }
             session.beginConfiguration()
             defer {
@@ -99,7 +116,7 @@ final class CameraServer: NSObject {
             session.inputs.forEach {
                 session.removeInput($0)
             }
-            session.addInput(videoInput)
+            session.addInput(input)
             if let audioDevice,
                 let audioInput = try? AVCaptureDeviceInput(device: audioDevice)
             {
