@@ -345,7 +345,6 @@ final class RTPSession {
             ntpBase = UInt64(interval * Double(1 << 32))
         }
         let rtp = UInt64((pts - ptsBase) * Double(clock)) + rtpBase
-        print("\(rtp), \(self.sessionConnection)")
         packet.replace(
             at: packet.startIndex.advanced(by: 4),
             with: UInt32(truncatingIfNeeded: rtp).bigEndian

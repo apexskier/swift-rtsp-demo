@@ -71,13 +71,16 @@ final class AVEncoder: @unchecked Sendable {
     private var firstpts: Double = -1
 
     private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.self")
-    private let aacEncoder = AACEncoder(inputChannels: 2)
+
+    private let aacEncoder: AACEncoder?
 
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
     private let maxFilenameIndex = 5  // filenames "capture1.mp4" wraps at capture5.mp4
 
-    init(height: Int, width: Int) {
+    init(height: Int, width: Int, audioChannels: Int) {
+        aacEncoder = AACEncoder(inputChannels: UInt32(audioChannels))
+
         self.height = height
         self.width = width
         let path = NSTemporaryDirectory().appending("params.mp4")

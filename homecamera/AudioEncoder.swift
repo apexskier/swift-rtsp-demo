@@ -26,9 +26,9 @@ class AACEncoder {
             mSampleRate: Self.audioSampleRate,
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-            mBytesPerPacket: UInt32(inputChannels * 2),  // 2 bytes per 16-bit sample
+            mBytesPerPacket: inputChannels * 2,  // 2 bytes per 16-bit sample
             mFramesPerPacket: 1,
-            mBytesPerFrame: UInt32(inputChannels * 2),
+            mBytesPerFrame: inputChannels * 2,
             mChannelsPerFrame: inputChannels,
             mBitsPerChannel: 16,
             mReserved: 0

@@ -95,7 +95,9 @@ final class CameraServer: NSObject {
                 session.removeInput($0)
             }
             session.addInput(videoInput)
-            if let audioDevice, let audioInput = try? AVCaptureDeviceInput(device: audioDevice) {
+            if let audioDevice,
+                let audioInput = try? AVCaptureDeviceInput(device: audioDevice)
+            {
                 session.addInput(audioInput)
             }
             setupRotationManager()
@@ -152,6 +154,11 @@ final class CameraServer: NSObject {
             session.addOutput(audioOutput)
         }
 
+        guard let channels = audioOutput.connection(with: .audio)?.audioChannels.count else {
+            print("No audio channels found")
+            return
+        }
+
         let dimensions = videoDevice.activeFormat.formatDescription.presentationDimensions()
         let height: CGFloat
         let width: CGFloat
@@ -166,7 +173,7 @@ final class CameraServer: NSObject {
         }
 
         // Create an encoder
-        let encoder = AVEncoder(height: Int(height), width: Int(width))
+        let encoder = AVEncoder(height: Int(height), width: Int(width), audioChannels: channels)
         encoder.encode { [weak self] data, pts in
             guard let self else { return }
             if let rtsp {
