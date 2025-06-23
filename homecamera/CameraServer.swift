@@ -134,7 +134,7 @@ final class CameraServer: NSObject {
         }
 
         // Create an output with self as delegate
-        captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.capture")
+        captureQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).CameraServer.capture")
         let videoOutput = AVCaptureVideoDataOutput()
         videoOutput.setSampleBufferDelegate(self, queue: captureQueue)
         videoOutput.videoSettings = [

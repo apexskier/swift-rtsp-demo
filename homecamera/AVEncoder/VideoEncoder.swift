@@ -98,7 +98,7 @@ final class VideoEncoder {
     // FIFO for frame times
     private var times: [Double] = []
     private let timesQueue = DispatchQueue(
-        label: "\(Bundle.main.bundleIdentifier!).avencoder.times"
+        label: "\(Bundle.main.bundleIdentifier!).VideoEncoder.times"
     )
 
     // store the calculated POC with a frame ready for timestamp assessment
@@ -118,7 +118,7 @@ final class VideoEncoder {
     private(set) var bitspersecond = 0
     private var firstpts: Double = -1
 
-    private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.self")
+    private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).VideoEncoder.self")
 
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
@@ -246,7 +246,7 @@ final class VideoEncoder {
         guard let inputFile else {
             return
         }
-        readQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).avencoder.read")
+        readQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).VideoEncoder.read")
         readSource = DispatchSource.makeReadSource(
             fileDescriptor: inputFile.fileDescriptor,
             queue: readQueue

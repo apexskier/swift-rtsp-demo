@@ -306,7 +306,7 @@ final class RTPSession {
     var receiverReports: PassthroughSubject<RRPacket.Block, Never>
 
     private let selfQueue = DispatchQueue(
-        label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
+        label: "\(Bundle.main.bundleIdentifier!).RTPSession.self"
     )
 
     fileprivate init(
