@@ -18,12 +18,12 @@ class AACEncoder {
     private var pcmBuffer = Data()
     private var bytesPerFrame: Int
 
-    static let audioSampleRate = 44100.0
+    static let audioSampleRate = 44100
 
     init?(inputChannels: UInt32) {
         // Input PCM format (from AVCaptureAudioDataOutput)
         inputFormat = AudioStreamBasicDescription(
-            mSampleRate: Self.audioSampleRate,
+            mSampleRate: Float64(Self.audioSampleRate),
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
             mBytesPerPacket: inputChannels * 2,  // 2 bytes per 16-bit sample
@@ -36,7 +36,7 @@ class AACEncoder {
 
         // Output AAC format
         outputFormat = AudioStreamBasicDescription(
-            mSampleRate: Self.audioSampleRate,
+            mSampleRate: Float64(Self.audioSampleRate),
             mFormatID: kAudioFormatMPEG4AAC,
             mFormatFlags: AudioFormatFlags(MPEG4ObjectID.AAC_LC.rawValue),
             mBytesPerPacket: 0,  // Variable bitrate
