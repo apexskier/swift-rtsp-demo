@@ -14,6 +14,7 @@ class RTSPServer {
     private var listener: CFSocket?
     private(set) var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
+    private(set) var audioSampleRate: Int
     var bitrate: Int = 0
     // primary RTSP server port
     let port: UInt16 = 554
@@ -33,8 +34,9 @@ class RTSPServer {
         }
     }
 
-    init?(configData: Data) {
+    init?(configData: Data, audioSampleRate: Int) {
         self.configData = configData
+        self.audioSampleRate = audioSampleRate
         // primary RTSP server socket, TCP 554
         var context = CFSocketContext()
         context.info = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())

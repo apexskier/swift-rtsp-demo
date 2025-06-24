@@ -857,7 +857,7 @@ class RTSPClientConnection {
             "a=fmtp:\(videoPayloadType) packetization-mode=1;profile-level-id=\(profileLevelID);sprop-parameter-sets=\(spsBase64),\(ppsBase64)",
             "m=audio 0 RTP/AVP \(audioPayloadType)",
             "a=control:\(audioStreamId)",
-            "a=rtpmap:\(audioPayloadType) MPEG4-GENERIC/\(AACEncoder.audioSampleRate)/2",
+            "a=rtpmap:\(audioPayloadType) MPEG4-GENERIC/\(server.audioSampleRate)/2",
             "a=fmtp:\(audioPayloadType) streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1210; SizeLength=13; IndexLength=3; IndexDeltaLength=3;",
         ]
     }
@@ -891,7 +891,7 @@ class RTSPClientConnection {
                 marker: true,  // always true for AAC (one AU per packet)
                 time: pts,
                 payloadType: audioPayloadType,
-                clock: Int(AACEncoder.audioSampleRate)
+                clock: Int(server!.audioSampleRate)
             )
             packet.replaceSubrange(rtpHeaderSize..., with: payload)
             rtpSession.sendPacket(packet)

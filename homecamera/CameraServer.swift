@@ -91,6 +91,8 @@ final class CameraServer: NSObject {
 
     // Use CIContext with metal for better performance
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    
+    private let audioSampleRate: Int = 44100
 
     private static func deviceFromDefaults(
         forKey key: String,
@@ -197,7 +199,7 @@ final class CameraServer: NSObject {
             width = dimensions.width
         }
 
-        self.audioEncoder = AACEncoder(inputChannels: UInt32(channels))
+        self.audioEncoder = AACEncoder(sampleRate: audioSampleRate, inputChannels: UInt32(channels))
 
         let videoEncoder = VideoEncoder(height: Int(height), width: Int(width))
         videoEncoder.setup { [weak self] data, pts in
@@ -208,7 +210,7 @@ final class CameraServer: NSObject {
             }
         } onParams: { [weak self] data in
             guard let self else { return }
-            rtsp = RTSPServer(configData: data)
+            rtsp = RTSPServer(configData: data, audioSampleRate: audioSampleRate)
         } outputSampleBuffer: { [weak self] buffer in
             guard let self else { return }
             pipeline.send(buffer)

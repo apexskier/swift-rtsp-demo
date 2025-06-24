@@ -12,18 +12,17 @@ import CoreMedia
 private let frameCount = 1024
 
 class AACEncoder {
-    private var converter: AudioConverterRef
-    private var inputFormat: AudioStreamBasicDescription
-    private var outputFormat: AudioStreamBasicDescription
+    private let converter: AudioConverterRef
+    private let inputFormat: AudioStreamBasicDescription
+    private let outputFormat: AudioStreamBasicDescription
+
     private var pcmBuffer = Data()
     private var bytesPerFrame: Int
 
-    static let audioSampleRate = 44100
-
-    init?(inputChannels: UInt32) {
+    init?(sampleRate: Int, inputChannels: UInt32) {
         // Input PCM format (from AVCaptureAudioDataOutput)
-        inputFormat = AudioStreamBasicDescription(
-            mSampleRate: Float64(Self.audioSampleRate),
+        var inputFormat = AudioStreamBasicDescription(
+            mSampleRate: Float64(sampleRate),
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
             mBytesPerPacket: inputChannels * 2,  // 2 bytes per 16-bit sample
@@ -35,8 +34,8 @@ class AACEncoder {
         )
 
         // Output AAC format
-        outputFormat = AudioStreamBasicDescription(
-            mSampleRate: Float64(Self.audioSampleRate),
+        var outputFormat = AudioStreamBasicDescription(
+            mSampleRate: Float64(sampleRate),
             mFormatID: kAudioFormatMPEG4AAC,
             mFormatFlags: AudioFormatFlags(MPEG4ObjectID.AAC_LC.rawValue),
             mBytesPerPacket: 0,  // Variable bitrate
@@ -54,7 +53,10 @@ class AACEncoder {
         guard let converter else {
             return nil
         }
+
         self.converter = converter
+        self.inputFormat = inputFormat
+        self.outputFormat = outputFormat
     }
 
     func encode(pcmBuffer: CMSampleBuffer) -> Data? {
@@ -136,5 +138,9 @@ class AACEncoder {
     private struct ConverterContext {
         var inputBufferList: AudioBufferList
         var consumed: Bool
+    }
+
+    deinit {
+        AudioConverterDispose(converter)
     }
 }
