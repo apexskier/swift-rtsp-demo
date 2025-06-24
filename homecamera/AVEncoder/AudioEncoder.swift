@@ -59,39 +59,27 @@ class AACEncoder {
         self.outputFormat = outputFormat
     }
 
-    func encode(pcmBuffer: CMSampleBuffer) -> Data? {
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(pcmBuffer) else { return nil }
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        CMBlockBufferGetDataPointer(
-            blockBuffer,
-            atOffset: 0,
-            lengthAtOffsetOut: nil,
-            totalLengthOut: &length,
-            dataPointerOut: &dataPointer
-        )
-        guard let dataPointer else { return nil }
+    func encode(blockBuffer: CMBlockBuffer) -> Data? {
         // Append new PCM data to our internal buffer
-        self.pcmBuffer.append(contentsOf: UnsafeRawBufferPointer(start: dataPointer, count: length))
+        try? blockBuffer.withUnsafeMutableBytes { ptr in
+            guard let data = ptr.bindMemory(to: UInt8.self).baseAddress else {
+                return
+            }
+            pcmBuffer.append(data, count: ptr.count)
+        }
+
         // Check if we have enough for all frames
         let requiredBytes = frameCount * bytesPerFrame
-        guard self.pcmBuffer.count >= requiredBytes else {
+        guard pcmBuffer.count >= requiredBytes else {
             // Not enough data yet
             return nil
         }
+       
         // Prepare input buffer for frames
-        let inputData = self.pcmBuffer.prefix(requiredBytes)
+        var inputData = pcmBuffer.prefix(requiredBytes)
         // Remove used data from buffer
-        self.pcmBuffer.removeFirst(requiredBytes)
-        // Setup input buffer list
-        let inputBufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(
-                mNumberChannels: inputFormat.mChannelsPerFrame,
-                mDataByteSize: UInt32(requiredBytes),
-                mData: UnsafeMutableRawPointer(mutating: (inputData as NSData).bytes)
-            )
-        )
+        pcmBuffer.removeFirst(requiredBytes)
+       
         // Output buffer
         let outputDataSize = frameCount * 2 * Int(outputFormat.mChannelsPerFrame)
         let outputData = UnsafeMutablePointer<UInt8>.allocate(capacity: outputDataSize)
@@ -104,13 +92,23 @@ class AACEncoder {
                 mData: outputData
             )
         )
+
         var ioOutputDataPackets: UInt32 = 1
-        var converterContext = ConverterContext(
-            inputBufferList: inputBufferList,
-            consumed: false
-        )
-        guard
-            AudioConverterFillComplexBuffer(
+        // Use withUnsafeMutableBytes with return value to ensure the input buffer memory is valid for the duration of the conversion
+        return inputData.withUnsafeMutableBytes { inputDataPtr -> Data? in
+            guard let baseAddress = inputDataPtr.baseAddress else { return nil }
+            var converterContext = ConverterContext(
+                inputBufferList: AudioBufferList(
+                    mNumberBuffers: 1,
+                    mBuffers: AudioBuffer(
+                        mNumberChannels: inputFormat.mChannelsPerFrame,
+                        mDataByteSize: UInt32(requiredBytes),
+                        mData: baseAddress
+                    )
+                ),
+                consumed: false
+            )
+            guard AudioConverterFillComplexBuffer(
                 converter,
                 { _, ioNumberDataPackets, ioData, _, inUserData in
                     guard let context = inUserData?.assumingMemoryBound(to: ConverterContext.self)
@@ -130,9 +128,14 @@ class AACEncoder {
                 &ioOutputDataPackets,
                 &outputBufferList,
                 nil
-            ) == noErr
-        else { return nil }
-        return Data(bytes: outputData, count: Int(outputBufferList.mBuffers.mDataByteSize))
+            ) == noErr else {
+                return nil
+            }
+            return Data(
+                bytes: outputData,
+                count: Int(outputBufferList.mBuffers.mDataByteSize)
+            )
+        }
     }
 
     private struct ConverterContext {

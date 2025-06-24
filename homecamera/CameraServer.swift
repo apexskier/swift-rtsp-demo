@@ -284,7 +284,8 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         from connection: AVCaptureConnection
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            if let rtsp, let audioData = audioEncoder?.encode(pcmBuffer: sampleBuffer) {
+            guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+            if let rtsp, let audioData = audioEncoder?.encode(blockBuffer: blockBuffer) {
                 let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                 rtsp.onAudioData(audioData, pts: CMTimeGetSeconds(pts))
             }
