@@ -392,33 +392,28 @@ final class RTPSession {
     }
 
     func onRTCP(_ data: Data) {
-        var ptr = data.startIndex
-        while ptr < data.endIndex {
-            // print(
-            //     """
-            //     C->S: RTCP (\(session ?? "no session"))
-            //     """
-            // )
+        // print(
+        //     """
+        //     C->S: RTCP (\(session ?? "no session"))
+        //     """
+        // )
 
-            if let message = RTCPMessage(data: data[ptr...]) {
-                ptr += Int(message.byteLength)
+        guard let message = RTCPMessage(data: data) else {
+            print("RTCP packet parsing failed")
+            return
+        }
 
-                switch message.packet {
-                case .receiverReport(let rRPacket):
-                    for block in rRPacket.blocks {
-                        receiverReports.send(block)
-                    }
-                case .sourceDescription(let sDESPacket):
-                    sourceDescription = sDESPacket.chunks.first?.text
-                case .goodbye:
-                    break
-                default:
-                    print("RTCP packet type \(message.type) not handled")
-                }
-            } else {
-                print("RTCP packet parsing failed")
-                return
+        switch message.packet {
+        case .receiverReport(let rRPacket):
+            for block in rRPacket.blocks {
+                receiverReports.send(block)
             }
+        case .sourceDescription(let sDESPacket):
+            sourceDescription = sDESPacket.chunks.first?.text
+        case .goodbye:
+            break
+        default:
+            print("RTCP packet type \(message.type) not handled")
         }
     }
 
@@ -499,28 +494,7 @@ class RTSPClientConnection {
         CFRunLoopAddSource(CFRunLoopGetMain(), self.rls, .commonModes)
     }
 
-    private var partialPacket: (data: Data, channel: UInt8, left: UInt16)?
-
-    private func onInterleaved(channel: UInt8, data: Data) {
-        for (_, rtspSession) in sessions {
-            if rtspSession.state == .playing {
-                for (_, rtpSession) in rtspSession.rtpSessions {
-                    if let interleavedRtpSessionConnection = rtpSession
-                        .sessionConnection as? RTPSessionInterleaved
-                    {
-                        switch channel {
-                        case interleavedRtpSessionConnection.channelRTP:
-                            rtpSession.onRTP(data)
-                        case interleavedRtpSessionConnection.channelRTCP:
-                            rtpSession.onRTCP(data)
-                        default:
-                            continue
-                        }
-                    }
-                }
-            }
-        }
-    }
+    private var partialPacket: (data: Data, left: UInt16)?
 
     private func onSocketData(_ allData: Data, address: CFData) {
         if allData.isEmpty {
@@ -529,38 +503,61 @@ class RTSPClientConnection {
             return
         }
 
+        var allData = allData
+
+        if var partialPacket {
+            partialPacket.data.append(contentsOf: allData)
+            if allData.count < Int(partialPacket.left) {
+                partialPacket.left -= UInt16(allData.count)
+                return
+            }
+            allData = partialPacket.data
+            self.partialPacket = nil
+        }
+
         var ptr = allData.startIndex
         while ptr < allData.endIndex {
             // possibilities here
             // - complete RTSP packet
-            // - complete RTCP packet
-            // - RTCP packet header, with remainder of data in next packet
+            // - interleaved complete RTCP packet
+            // - interleaved complete RTP packet
+            // - interleaved header, with remainder of data in next packet
+            //   once combined...
+            //   - single interleaved RTP or RTCP packet
+            //   - multiple interleaved packets
             // - RTSP packet followed by RTCP packet
             // - multiple RTCP packets
+            // I don't think there can be an interleaved RTP packet followed by more, since it doesn't have a length
+            // so far I've only seen interleaved packets as partial, so assume that
 
             let data = allData[ptr...]
-
-            if var partialPacket {
-                // so far I've only seen interleaved packets as partial, so assume that
-                partialPacket.data.append(contentsOf: data)
-                if data.count < Int(partialPacket.left) {
-                    partialPacket.left -= UInt16(data.count)
-                } else {
-                    onInterleaved(channel: partialPacket.channel, data: partialPacket.data)
-                    self.partialPacket = nil
-                }
-                ptr += data.count
-            } else if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
-                let channel = data[data.startIndex + 1]  // channel number
+            if data[data.startIndex] == 0x24 {  // '$' indicates an RTSP interleaved frame
                 let length = data.read(at: data.startIndex + 2, as: UInt16.self).bigEndian
-                let remainingDataCount = data.count - 4
-                let interleavedData = data[data.startIndex.advanced(by: 4)...]
-                if remainingDataCount < length {
+                if data.count < length {
                     partialPacket = (
-                        interleavedData, channel, length - UInt16(interleavedData.count)
+                        data, length - UInt16(data.count)
                     )
+                    return
                 } else {
-                    onInterleaved(channel: channel, data: interleavedData)
+                    let channel = data[data.startIndex + 1]  // channel number
+                    for (_, rtspSession) in sessions {
+                        if rtspSession.state == .playing {
+                            for (_, rtpSession) in rtspSession.rtpSessions {
+                                if let interleavedRtpSessionConnection = rtpSession
+                                    .sessionConnection as? RTPSessionInterleaved
+                                {
+                                    switch channel {
+                                    case interleavedRtpSessionConnection.channelRTP:
+                                        rtpSession.onRTP(data[(data.startIndex + 4)...])
+                                    case interleavedRtpSessionConnection.channelRTCP:
+                                        rtpSession.onRTCP(data[(data.startIndex + 4)...])
+                                    default:
+                                        continue
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 ptr += 4 + Int(length)
             } else {
