@@ -85,7 +85,8 @@ final class CameraServer: NSObject {
     private var rotationManager: AVCaptureDevice.RotationCoordinator? = nil
     private var videoOutput: AVCaptureVideoDataOutput? = nil
     private var captureQueue: DispatchQueue? = nil
-    private var encoder: AVEncoder? = nil
+    private var audioEncoder: AACEncoder? = nil
+    private var videoEncoder: VideoEncoder? = nil
     var rtsp: RTSPServer? = nil
 
     // Use CIContext with metal for better performance
@@ -196,18 +197,14 @@ final class CameraServer: NSObject {
             width = dimensions.width
         }
 
-        // Create an encoder
-        let encoder = AVEncoder(height: Int(height), width: Int(width), audioChannels: channels)
-        encoder.setup { [weak self] data, pts in
-            guard let self else { return }
-            if let rtsp, let bitrate = encoder.videoEncoder?.bitspersecond {
-                rtsp.bitrate = bitrate
-                rtsp.onVideoData(data, time: pts)
-            }
-        } audioBlock: { [weak self] (data, pts) in
+        self.audioEncoder = AACEncoder(inputChannels: UInt32(channels))
+
+        let videoEncoder = VideoEncoder(height: Int(height), width: Int(width))
+        videoEncoder.setup { [weak self] data, pts in
             guard let self else { return }
             if let rtsp {
-                rtsp.onAudioData(data, pts: pts)
+                rtsp.bitrate = videoEncoder.bitspersecond
+                rtsp.onVideoData(data, time: pts)
             }
         } onParams: { [weak self] data in
             guard let self else { return }
@@ -216,8 +213,7 @@ final class CameraServer: NSObject {
             guard let self else { return }
             pipeline.send(buffer)
         }
-
-        self.encoder = encoder
+        self.videoEncoder = videoEncoder
 
         // Start capture
         session.startRunning()
@@ -237,7 +233,7 @@ final class CameraServer: NSObject {
             .observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) {
                 [weak self] obj, change in
                 guard
-                    let encoder = self?.encoder?.videoEncoder,
+                    let encoder = self?.videoEncoder,
                     let device = obj.device,
                     let v = change.newValue
                 else {
@@ -262,8 +258,8 @@ final class CameraServer: NSObject {
         self.session = nil
         rtsp?.shutdownServer()
         self.rtsp = nil
-        encoder?.shutdown()
-        self.encoder = nil
+        videoEncoder?.shutdown()
+        self.videoEncoder = nil
         self.videoOutput = nil
         self.captureQueue = nil
     }
@@ -283,7 +279,10 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         from connection: AVCaptureConnection
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            encoder?.encodeAudio(frame: sampleBuffer)
+            if let rtsp, let audioData = audioEncoder?.encode(pcmBuffer: sampleBuffer) {
+                let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                rtsp.onAudioData(audioData, pts: CMTimeGetSeconds(pts))
+            }
             return
         }
 
@@ -426,6 +425,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
 
         CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        encoder?.encodeVideo(frame: newSampleBuffer)
+        videoEncoder?.encodeVideo(frame: newSampleBuffer)
     }
 }

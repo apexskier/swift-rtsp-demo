@@ -57,7 +57,7 @@ class AACEncoder {
         self.converter = converter
     }
 
-    func encode(pcmBuffer: CMSampleBuffer) -> (data: Data, pts: CMTime)? {
+    func encode(pcmBuffer: CMSampleBuffer) -> Data? {
         guard let blockBuffer = CMSampleBufferGetDataBuffer(pcmBuffer) else { return nil }
         var length = 0
         var dataPointer: UnsafeMutablePointer<Int8>?
@@ -130,8 +130,7 @@ class AACEncoder {
                 nil
             ) == noErr
         else { return nil }
-        let pts = CMSampleBufferGetPresentationTimeStamp(pcmBuffer)
-        return (Data(bytes: outputData, count: Int(outputBufferList.mBuffers.mDataByteSize)), pts)
+        return Data(bytes: outputData, count: Int(outputBufferList.mBuffers.mDataByteSize))
     }
 
     private struct ConverterContext {
