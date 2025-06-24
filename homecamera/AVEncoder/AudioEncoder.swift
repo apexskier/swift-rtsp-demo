@@ -70,16 +70,21 @@ class AACEncoder {
 
         // Check if we have enough for all frames
         let requiredBytes = frameCount * bytesPerFrame
+
         guard pcmBuffer.count >= requiredBytes else {
             // Not enough data yet
             return nil
         }
-       
+
+        // WARNING: if we ever deliver more than one frame at a time, this will memory leak as pcmBuffer will keep growing.
+
         // Prepare input buffer for frames
         var inputData = pcmBuffer.prefix(requiredBytes)
         // Remove used data from buffer
-        pcmBuffer.removeFirst(requiredBytes)
-       
+        // this creates a new instance of Data. If we just removePrefix, indices gradually
+        // grow, and I think there's a memory leak due to this
+        pcmBuffer = Data(pcmBuffer.dropFirst(requiredBytes))
+
         // Output buffer
         let outputDataSize = frameCount * 2 * Int(outputFormat.mChannelsPerFrame)
         let outputData = UnsafeMutablePointer<UInt8>.allocate(capacity: outputDataSize)
@@ -108,27 +113,30 @@ class AACEncoder {
                 ),
                 consumed: false
             )
-            guard AudioConverterFillComplexBuffer(
-                converter,
-                { _, ioNumberDataPackets, ioData, _, inUserData in
-                    guard let context = inUserData?.assumingMemoryBound(to: ConverterContext.self)
-                    else {
-                        return 1
-                    }
-                    if context.pointee.consumed {
-                        ioNumberDataPackets.pointee = 0
+            guard
+                AudioConverterFillComplexBuffer(
+                    converter,
+                    { _, ioNumberDataPackets, ioData, _, inUserData in
+                        guard
+                            let context = inUserData?.assumingMemoryBound(to: ConverterContext.self)
+                        else {
+                            return 1
+                        }
+                        if context.pointee.consumed {
+                            ioNumberDataPackets.pointee = 0
+                            return noErr
+                        }
+                        ioData.pointee = context.pointee.inputBufferList
+                        ioNumberDataPackets.pointee = UInt32(frameCount)
+                        context.pointee.consumed = true
                         return noErr
-                    }
-                    ioData.pointee = context.pointee.inputBufferList
-                    ioNumberDataPackets.pointee = UInt32(frameCount)
-                    context.pointee.consumed = true
-                    return noErr
-                },
-                &converterContext,
-                &ioOutputDataPackets,
-                &outputBufferList,
-                nil
-            ) == noErr else {
+                    },
+                    &converterContext,
+                    &ioOutputDataPackets,
+                    &outputBufferList,
+                    nil
+                ) == noErr
+            else {
                 return nil
             }
             return Data(
