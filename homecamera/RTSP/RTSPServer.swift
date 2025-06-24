@@ -64,6 +64,14 @@ class RTSPServer {
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
     }
 
+    func announce() {
+        selfQueue.sync {
+            for conn in connections {
+                conn.announce()
+            }
+        }
+    }
+
     private func onAccept(childHandle: CFSocketNativeHandle, address: CFData?) {
         guard let conn = RTSPClientConnection(socketHandle: childHandle, address: address, server: self) else {
             return

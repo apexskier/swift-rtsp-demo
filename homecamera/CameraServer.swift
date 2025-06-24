@@ -242,13 +242,16 @@ final class CameraServer: NSObject {
                 let dimensions = device.activeFormat.formatDescription.presentationDimensions()
                 if (Int(v) / 90) % 2 == 1 {
                     // portrait
-                    encoder.height = Int(dimensions.width)
-                    encoder.width = Int(dimensions.height)
+                    encoder.size = CGSize(
+                        width: dimensions.height,
+                        height: dimensions.width
+                    )
                 } else {
                     // landscape
-                    encoder.height = Int(dimensions.height)
-                    encoder.width = Int(dimensions.width)
+                    encoder.size = dimensions
                 }
+
+                self?.rtsp?.announce()
             }
     }
 
@@ -293,7 +296,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        // TODO: use RTSP ANNOUNCE to change dimensions on rotation?
         // Calculate rotated dimensions
         let degrees = rotationManager?.videoRotationAngleForHorizonLevelCapture ?? 0
         let normalizedDegrees = Int(degrees) % 360

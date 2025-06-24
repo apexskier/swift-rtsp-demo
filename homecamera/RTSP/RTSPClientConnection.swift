@@ -451,6 +451,7 @@ class RTSPClientConnection {
     private let videoStreamId = "streamid=1"
     private let audioStreamId = "streamid=2"
     private let address: CFData?
+    private var sequenceNumber = 0
 
     init?(socketHandle: CFSocketNativeHandle, address: CFData?, server: RTSPServer) {
         self.server = server
@@ -584,6 +585,7 @@ class RTSPClientConnection {
 
     private func handleRTSPPacket(_ data: Data, address: CFData) -> Int? {
         guard let msg = RTSPMessage(data) else { return nil }
+        sequenceNumber = msg.sequence + 1
         var response = [String]()
         let cmd = msg.command.lowercased()
         // print(
@@ -695,6 +697,30 @@ class RTSPClientConnection {
             CFSocketSendData(socketInbound, nil, responseData as CFData, 2)
         }
         return msg.length
+    }
+
+    func announce() {
+        guard let ipString, let server else {
+            return
+        }
+        let sdp = makeSDP()
+        for sessionId in sessions.keys {
+            let response =
+                [
+                    "ANNOUNCE rtsp://\(ipString):\(server.port) RTSP/1.0",
+                    "CSeq: \(sequenceNumber)",
+                    "Sesssion: \(sessionId)",
+                    "Content-Type: application/sdp",
+                    "Content-Length: \(sdp.joined(separator: "\r\n").lengthOfBytes(using: .utf8))",
+                    "",
+                ] + sdp
+            if let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n")
+                .data(using: .utf8)
+            {
+                CFSocketSendData(socketInbound, nil, responseData as CFData, 2)
+            }
+            sequenceNumber += 1
+        }
     }
 
     private func createRTPSession(

@@ -72,8 +72,7 @@ final class VideoEncoder {
     // index of current file name
     private var swapping = false
     private var currentFile = 1
-    var height: Int
-    var width: Int
+    var size: CGSize
 
     // param set data
     private(set) var avcC: Data?
@@ -118,15 +117,16 @@ final class VideoEncoder {
     private(set) var bitspersecond = 0
     private var firstpts: Double = -1
 
-    private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).VideoEncoder.self")
+    private let selfQueue = DispatchQueue(
+        label: "\(Bundle.main.bundleIdentifier!).VideoEncoder.self"
+    )
 
     // MARK: - Constants
     private let outputFileSwitchPoint: UInt64 = 50 * 1024 * 1024  // 50 MB switch point
     private let maxFilenameIndex = 5  // filenames "capture1.mp4" wraps at capture5.mp4
 
     init(height: Int, width: Int) {
-        self.height = height
-        self.width = width
+        self.size = CGSize(width: width, height: height)
         let path = NSTemporaryDirectory().appending("params.mp4")
         headerWriter = H264VideoWriter(path: path, height: height, width: width)
         timesQueue.sync {
@@ -188,7 +188,11 @@ final class VideoEncoder {
                     currentFile += 1
                     if currentFile > maxFilenameIndex { currentFile = 1 }
                     print("Swap to file \(currentFile)")
-                    writer = H264VideoWriter(path: makeFilename(), height: height, width: width)
+                    writer = H264VideoWriter(
+                        path: makeFilename(),
+                        height: Int(size.height),
+                        width: Int(size.width)
+                    )
                     // to do this seamlessly requires a few steps in the right order
                     // first, suspend the read source
                     readSource?.cancel()
