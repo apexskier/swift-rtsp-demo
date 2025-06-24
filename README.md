@@ -9,9 +9,15 @@ The original code is based on [a server from GDCL](http://www.gdcl.co.uk/2013/02
 - Rewritten in Swift/SwiftUI
 - Modernized to use Swift's `Foundation.Data` type for bit packing
 - Modernized to use Swift Concurrency
-- Support for Embedded (Interleaved) Binary Data ([RFC 2326, 10.12](https://datatracker.ietf.org/doc/html/rfc2326#section-10.12))
-- Partial support for RTCP parsing
-- Add AVSampleBufferDisplayLayer based UI preview (vs AVCaptureVideoPreviewLayer)
-- Add CoreGraphics based overlay to video feed
-- Add client connection status to UI
-- Add camera switching to UI
+
+**Additional features**
+
+- Embedded (Interleaved) Binary Data ([RFC 2326, 10.12](https://datatracker.ietf.org/doc/html/rfc2326#section-10.12))
+- RTCP
+- Multiple sessions per client
+- Audio
+- New UI
+- CoreGraphics based video overlay
+- Camera and microphone switching
+- Rotation
+- Basic Auth
