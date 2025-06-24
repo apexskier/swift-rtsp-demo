@@ -65,22 +65,11 @@ class RTSPServer {
     }
 
     private func onAccept(childHandle: CFSocketNativeHandle, address: CFData?) {
-        guard let conn = RTSPClientConnection(socketHandle: childHandle, server: self) else {
+        guard let conn = RTSPClientConnection(socketHandle: childHandle, address: address, server: self) else {
             return
         }
         selfQueue.sync {
-            var ipString = "unknown"
-            var port: UInt16 = 0
-            if let address = address as Data? {
-                address.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-                    if let sockaddr = ptr.baseAddress?.assumingMemoryBound(to: sockaddr_in.self) {
-                        let addr = sockaddr.pointee.sin_addr
-                        ipString = String(cString: inet_ntoa(addr))
-                        port = sockaddr.pointee.sin_port.littleEndian
-                    }
-                }
-            }
-            print("Client connected: \(ipString):\(port)")
+            print("Client connected: \(conn)")
             connections.append(conn)
         }
     }

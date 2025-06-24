@@ -301,6 +301,7 @@ final class RTPSession {
     private var sentRTCP: Date? = nil
     private var packetsReported = 0
     private var bytesReported = 0
+    let streamId: String
 
     fileprivate var sessionConnection: RTSPSessionProto
     var receiverReports = PassthroughSubject<RRPacket.Block, Never>()
@@ -309,8 +310,9 @@ final class RTPSession {
         label: "\(Bundle.main.bundleIdentifier!).RTPSession.self"
     )
 
-    fileprivate init(sessionConnection: RTSPSessionProto) {
+    fileprivate init(sessionConnection: RTSPSessionProto, streamId: String) {
         self.sessionConnection = sessionConnection
+        self.streamId = streamId
     }
 
     // RFC 3550, 5.1
@@ -440,6 +442,7 @@ class RTSPClientConnection {
         label: "\(Bundle.main.bundleIdentifier!).RTSPClientConnection.self"
     )
 
+    @Observable
     final class RTSPSession {
         fileprivate var state: RTSPSessionState = .setup
         var rtpSessions = [String: RTPSession]()
@@ -452,9 +455,11 @@ class RTSPClientConnection {
     private let audioPayloadType: UInt8 = 97
     private let videoStreamId = "streamid=1"
     private let audioStreamId = "streamid=2"
+    private let address: CFData?
 
-    init?(socketHandle: CFSocketNativeHandle, server: RTSPServer) {
+    init?(socketHandle: CFSocketNativeHandle, address: CFData?, server: RTSPServer) {
         self.server = server
+        self.address = address
 
         // client -> server RTSP socket
         var context = CFSocketContext()
@@ -623,7 +628,11 @@ class RTSPClientConnection {
                     response = msg.createResponse(code: 404, text: "Stream ID not recognised")
                 } else if rtpSessions.rtpSessions[String(streamId)] != nil {
                     response = msg.createResponse(code: 455, text: "Method not valid in this state")
-                } else if let session = self.createRTPSession(msg: msg, address: address) {
+                } else if let session = self.createRTPSession(
+                    msg: msg,
+                    address: address,
+                    streamId: String(streamId)
+                ) {
                     rtpSessions.rtpSessions[String(streamId)] = session
                     print(
                         "Created RTPSession for stream \(streamId) in session \(rtspSession), \(session.sessionConnection)"
@@ -682,7 +691,11 @@ class RTSPClientConnection {
         return msg.length
     }
 
-    private func createRTPSession(msg: RTSPMessage, address: CFData) -> RTPSession? {
+    private func createRTPSession(
+        msg: RTSPMessage,
+        address: CFData,
+        streamId: String
+    ) -> RTPSession? {
         guard let socketInbound, let transport = msg.headers["transport"] else {
             return nil
         }
@@ -701,7 +714,7 @@ class RTSPClientConnection {
                 rtp: portRTP,
                 rtcp: portRTCP
             )
-            let session = RTPSession(sessionConnection: sessionConnection)
+            let session = RTPSession(sessionConnection: sessionConnection, streamId: streamId)
             sessionConnection.sessionWrapper.session = session
             return session
         }
@@ -720,6 +733,7 @@ class RTSPClientConnection {
                     socket: socketInbound,
                     address: address
                 ),
+                streamId: streamId
             )
         }
 
@@ -928,5 +942,22 @@ class RTSPClientConnection {
             tearDown(rtspSessionId: rtspSessionId)
         }
         CFSocketInvalidate(socketInbound)
+    }
+}
+
+extension RTSPClientConnection: CustomStringConvertible {
+    var description: String {
+        var ipString = "unknown"
+        var port: UInt16 = 0
+        if let address = address as Data? {
+            address.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                if let sockaddr = ptr.baseAddress?.assumingMemoryBound(to: sockaddr_in.self) {
+                    let addr = sockaddr.pointee.sin_addr
+                    ipString = String(cString: inet_ntoa(addr))
+                    port = sockaddr.pointee.sin_port.littleEndian
+                }
+            }
+        }
+        return "\(ipString):\(port)"
     }
 }

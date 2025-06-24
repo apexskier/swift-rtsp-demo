@@ -18,7 +18,7 @@ struct RTPView: View {
 
     var body: some View {
         VStack {
-            Text("\(rtpSession.sourceDescription ?? "Unknown")")
+            Text("\(rtpSession.streamId): \(rtpSession.sourceDescription ?? "Unknown")")
             VStack {
                 if let jitter {
                     Text("Jitter: \(String(format: "%.2f", jitter * 1000)) ms")
@@ -161,68 +161,84 @@ struct ContentView: View {
     @State
     private var cameraServer: CameraServer = .shared
     @State
-    private var showConnectionsSheet = false
+    private var selectedTab: Int = 0
 
     var body: some View {
-        NavigationStack {
-            CameraPreview2(pipeline: cameraServer.pipeline)
-                .toolbar {
-                    ToolbarItem {
-                        if let urlString = cameraServer.getURL(),
-                            let url = URL(string: urlString)
-                        {
-                            ShareLink(item: url) {
-                                Label("Copy URL", systemImage: "network")
+        TabView(selection: $selectedTab) {
+            // Camera Tab
+            Tab("Camera", systemImage: "web.camera", value: 0) {
+                NavigationStack {
+                    CameraPreview2(pipeline: cameraServer.pipeline)
+                        .ignoresSafeArea(.all, edges: [.horizontal])
+                        .toolbar {
+                            ToolbarItem {
+                                if let urlString = cameraServer.getURL(),
+                                    let url = URL(string: urlString)
+                                {
+                                    ShareLink(item: url) {
+                                        Label("Copy URL", systemImage: "network")
+                                    }
+                                } else {
+                                    Button {
+                                    } label: {
+                                        Label("Copy URL", systemImage: "network.slash")
+                                    }
+                                    .disabled(true)
+                                }
+                            }
+                            BatterySaverToolbarItem()
+                            if cameraServer.videoDeviceDiscovery.devices.count > 1 {
+                                CameraPickerToolbarItem(cameraServer: cameraServer)
+                            }
+                            if cameraServer.audioDeviceDiscovery.devices.count > 1 {
+                                MicrophonePickerToolbarItem(cameraServer: cameraServer)
+                            }
+                        }
+                }
+            }
+
+            Tab("Connections", systemImage: "rectangle.connected.to.line.below", value: 1) {
+                NavigationStack {
+                    ScrollView {
+                        if let rtsp = cameraServer.rtsp {
+                            if rtsp.connections.isEmpty {
+                                Text("No connections.")
+                            }
+                            ForEach(rtsp.connections, id: \.socketInbound) { connection in
+                                VStack {
+                                    Text(connection.description)
+                                    ConnectionView(connection: connection)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.bottom)
                             }
                         } else {
-                            Button {
-                            } label: {
-                                Label("Copy URL", systemImage: "network.slash")
+                            Text("No connections.")
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .navigationTitle("Connections")
+                    .toolbar {
+                        ToolbarItem {
+                            if let urlString = cameraServer.getURL(),
+                                let url = URL(string: urlString)
+                            {
+                                ShareLink(item: url) {
+                                    Label("Copy URL", systemImage: "network")
+                                }
+                            } else {
+                                Button {
+                                } label: {
+                                    Label("Copy URL", systemImage: "network.slash")
+                                }
+                                .disabled(true)
                             }
-                            .disabled(true)
-                        }
-                    }
-                    BatterySaverToolbarItem()
-                    if cameraServer.videoDeviceDiscovery.devices.count > 1 {
-                        CameraPickerToolbarItem(cameraServer: cameraServer)
-                    }
-                    if cameraServer.audioDeviceDiscovery.devices.count > 1 {
-                        MicrophonePickerToolbarItem(cameraServer: cameraServer)
-                    }
-                    ToolbarItem {
-                        Button {
-                            showConnectionsSheet = true
-                        } label: {
-                            Label("Connections", systemImage: "rectangle.connected.to.line.below")
-                        }
-                        .badge(cameraServer.rtsp?.connections.count ?? 0)
-                    }
-                }
-        }
-        .sheet(isPresented: $showConnectionsSheet) {
-            NavigationStack {
-                VStack(alignment: .leading) {
-                    if let rtsp = cameraServer.rtsp {
-                        ForEach(rtsp.connections, id: \.socketInbound) { connection in
-                            ConnectionView(connection: connection)
-                                .padding(.bottom)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    } else {
-                        Text("No connections.")
-                    }
-                    Spacer()
-                }
-                .padding()
-                .navigationTitle("Connections")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") {
-                            showConnectionsSheet = false
                         }
                     }
                 }
             }
+            .badge(cameraServer.rtsp?.connections.reduce(0, { $0 + $1.sessions.count }) ?? 0)
         }
         .task {
             UIApplication.shared.isIdleTimerDisabled = true

@@ -59,6 +59,8 @@ struct CameraPreview2: UIViewRepresentable {
     func makeUIView(context: Context) -> VideoPreviewView {
         let view = VideoPreviewView()
         view.setup(pipeline: pipeline)
+        view.sampleBufferLayer?.preventsDisplaySleepDuringVideoPlayback = true
+        view.backgroundColor = .gray
         return view
     }
 
