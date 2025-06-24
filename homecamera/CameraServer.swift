@@ -35,7 +35,7 @@ final class CameraServer: NSObject {
     var audioDevice: AVCaptureDevice? {
         get {
             if let id = UserDefaults.standard.string(forKey: "selectedAudioDeviceID"),
-               let device = AVCaptureDevice(uniqueID: id)
+                let device = AVCaptureDevice(uniqueID: id)
             {
                 return device
             }
@@ -57,7 +57,7 @@ final class CameraServer: NSObject {
             }
             session.addInput(input)
             if let videoDevice,
-               let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
+                let videoInput = try? AVCaptureDeviceInput(device: videoDevice)
             {
                 session.addInput(videoInput)
             }
@@ -130,6 +130,9 @@ final class CameraServer: NSObject {
     private var captureQueue: DispatchQueue? = nil
     private var encoder: AVEncoder? = nil
     var rtsp: RTSPServer? = nil
+
+    // Use CIContext with metal for better performance
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
     // TODO: observe device discovery changes using KV
 
@@ -340,14 +343,12 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         guard status == kCVReturnSuccess, let outputBuffer else { return }
         CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        // Use CIContext with metal for better performance
-        CIContext(options: [.useSoftwareRenderer: false])
-            .render(
-                rotatedImage,
-                to: outputBuffer,
-                bounds: CGRect(x: 0, y: 0, width: width, height: height),
-                colorSpace: CGColorSpaceCreateDeviceRGB()
-            )
+        ciContext.render(
+            rotatedImage,
+            to: outputBuffer,
+            bounds: CGRect(x: 0, y: 0, width: width, height: height),
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
         CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(outputBuffer) else {
