@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // Typealiases for handler blocks
@@ -6,7 +6,7 @@ typealias EncoderHandler = (_ data: [Data], _ pts: Double) -> Void
 typealias ParamHandler = (_ params: Data) -> Void
 
 // H264VideoWriter: Handles AVAssetWriter setup and frame encoding for H.264 video
-private final class H264VideoWriter: Sendable {
+private struct H264VideoWriter: Sendable {
     private let writer: AVAssetWriter
     private let writerInput: AVAssetWriterInput
 
@@ -34,8 +34,16 @@ private final class H264VideoWriter: Sendable {
         writer.add(writerInput)
     }
 
-    func finishWithCompletionHandler(_ handler: @Sendable @escaping () -> Void) {
+    func finish(_ handler: @Sendable @escaping () -> Void) {
         writer.finishWriting(completionHandler: handler)
+    }
+
+    func finish() async {
+        await withCheckedContinuation { continuation in
+            finish {
+                continuation.resume()
+            }
+        }
     }
 
     func encodeFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -161,7 +169,7 @@ final class VideoEncoder {
                 needParams = false
                 if headerWriter?.encodeFrame(sampleBuffer) == true {
                     headerWriter?
-                        .finishWithCompletionHandler { [weak self] in
+                        .finish { [weak self] in
                             self?.onParamsCompletion()
                         }
                 }
@@ -206,7 +214,7 @@ final class VideoEncoder {
                                 print("No old video to finish")
                                 return
                             }
-                            oldVideo.finishWithCompletionHandler {
+                            oldVideo.finish {
                                 self?.swapFiles(oldVideo.url)
                             }
                         }
@@ -220,8 +228,8 @@ final class VideoEncoder {
     func shutdown() {
         selfQueue.sync {
             readSource = nil
-            headerWriter?.finishWithCompletionHandler { [weak self] in self?.headerWriter = nil }
-            writer?.finishWithCompletionHandler { [weak self] in self?.writer = nil }
+            headerWriter?.finish { [weak self] in self?.headerWriter = nil }
+            writer?.finish { [weak self] in self?.writer = nil }
             // !! wait for these to finish before returning and delete temp files
         }
     }
