@@ -345,12 +345,16 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         guard status == kCVReturnSuccess, let outputBuffer else { return }
         CVPixelBufferLockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
-        ciContext.render(
-            rotatedImage,
-            to: outputBuffer,
-            bounds: CGRect(x: 0, y: 0, width: width, height: height),
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
+        // Ensure thread safety for ciContext.render
+        DispatchQueue(label: "CameraServer.ciContext.render")
+            .sync {
+                ciContext.render(
+                    rotatedImage,
+                    to: outputBuffer,
+                    bounds: CGRect(x: 0, y: 0, width: width, height: height),
+                    colorSpace: CGColorSpaceCreateDeviceRGB()
+                )
+            }
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(outputBuffer) else {
             CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
