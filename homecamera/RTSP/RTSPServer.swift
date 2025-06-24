@@ -2,6 +2,7 @@ import CoreFoundation
 import CoreServices
 import Foundation
 import Network
+import Security
 
 @Observable
 class RTSPServer {
@@ -9,7 +10,7 @@ class RTSPServer {
         let username: String
         let password: String
     }
-    
+
     private var listener: CFSocket?
     private(set) var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
@@ -19,6 +20,11 @@ class RTSPServer {
     private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).RTSPServer.self")
     var auth: Auth? {
         didSet {
+            if let auth {
+                auth.saveToKeychain()
+            } else {
+                Auth.deleteFromKeychain()
+            }
             selfQueue.sync {
                 for conn in connections {
                     conn.shutdown()
@@ -76,6 +82,7 @@ class RTSPServer {
         }
         let rls = CFSocketCreateRunLoopSource(nil, listener, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), rls, .commonModes)
+        self.auth = Auth.loadFromKeychain()
     }
 
     func announce() {
@@ -87,7 +94,13 @@ class RTSPServer {
     }
 
     private func onAccept(childHandle: CFSocketNativeHandle, address: CFData?) {
-        guard let conn = RTSPClientConnection(socketHandle: childHandle, address: address, server: self) else {
+        guard
+            let conn = RTSPClientConnection(
+                socketHandle: childHandle,
+                address: address,
+                server: self
+            )
+        else {
             return
         }
         selfQueue.sync {
@@ -162,5 +175,44 @@ class RTSPServer {
             freeifaddrs(ifaddr)
         }
         return address
+    }
+}
+
+extension RTSPServer.Auth {
+    private static let service = "\(Bundle.main.bundleIdentifier!).BasicAuth.Service"
+    private static let account = "\(Bundle.main.bundleIdentifier!).BasicAuth.Account"
+
+    private static var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
+    static func loadFromKeychain() -> Self? {
+        let query: [String: Any] = baseQuery.merging([
+            kSecReturnData as String: true,
+        ]) { $1 }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+            let username = dict["username"],
+            let password = dict["password"]
+        else { return nil }
+        return RTSPServer.Auth(username: username, password: password)
+    }
+
+    func saveToKeychain() {
+        let dict = ["username": username, "password": password]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return }
+        SecItemDelete(Self.baseQuery as CFDictionary)
+        let addQuery: [String: Any] = Self.baseQuery.merging([kSecValueData as String: data]) { $1 }
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    static func deleteFromKeychain() {
+        SecItemDelete(baseQuery as CFDictionary)
     }
 }
