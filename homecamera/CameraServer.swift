@@ -290,6 +290,8 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
         let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
         let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         // TODO: use RTSP ANNOUNCE to change dimensions on rotation?
         // Calculate rotated dimensions
@@ -309,14 +311,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             height = originalHeight
         }
 
-        // Create pixel buffer with proper attributes
-        let attributes: [String: Any] = [
-            kCVPixelBufferCGImageCompatibilityKey as String: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-        ]
-
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let rotatedImage: CIImage
         switch normalizedDegrees {
         case 90:
@@ -329,6 +323,11 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             rotatedImage = ciImage.oriented(.up)
         }
 
+        let attributes: [String: Any] = [
+            kCVPixelBufferCGImageCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+        ]
         var outputBuffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
@@ -347,7 +346,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             bounds: CGRect(x: 0, y: 0, width: width, height: height),
             colorSpace: CGColorSpaceCreateDeviceRGB()
         )
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(outputBuffer) else {
             CVPixelBufferUnlockBaseAddress(outputBuffer, CVPixelBufferLockFlags(rawValue: 0))
