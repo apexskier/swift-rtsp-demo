@@ -583,11 +583,41 @@ class RTSPClientConnection {
         }
     }
 
+    private func isAuthorized(_ msg: RTSPMessage) -> Bool {
+        guard let auth = server?.auth else {
+            return true
+        }
+        guard
+            let authHeader = msg.headers["authorization"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return false
+        }
+        let prefix = "Basic "
+        guard authHeader.lowercased().hasPrefix(prefix.lowercased()) else {
+            return false
+        }
+        let base64Credentials = String(authHeader.dropFirst(prefix.count))
+        return base64Credentials
+            == Data("\(auth.username):\(auth.password)".utf8).base64EncodedString()
+    }
+
     private func handleRTSPPacket(_ data: Data, address: CFData) -> Int? {
         guard let msg = RTSPMessage(data) else { return nil }
         sequenceNumber = msg.sequence + 1
         var response = [String]()
         let cmd = msg.command.lowercased()
+        // Basic Auth check for all commands except OPTIONS
+        if cmd != "options" && !isAuthorized(msg) {
+            response = msg.createResponse(code: 401, text: "Unauthorized")
+            response.append("WWW-Authenticate: Basic realm=\"\(Bundle.main.bundleIdentifier!)\"")
+            if let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n")
+                .data(using: .utf8)
+            {
+                CFSocketSendData(socketInbound, nil, responseData as CFData, 2)
+            }
+            return msg.length
+        }
         // print(
         //     """
         //     C->S: (\(session ?? "no session"))
@@ -599,6 +629,11 @@ class RTSPClientConnection {
             response = msg.createResponse(code: 200, text: "OK")
             response.append("Server: AVEncoderDemo/1.0")
             response.append("Public: DESCRIBE, SETUP, TEARDOWN, PLAY, OPTIONS")
+            if server?.auth != nil {
+                response.append(
+                    "WWW-Authenticate: Basic realm=\"\(Bundle.main.bundleIdentifier!)\""
+                )
+            }
         case "describe":
             response = msg.createResponse(code: 200, text: "OK")
             let date = DateFormatter.localizedString(

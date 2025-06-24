@@ -165,7 +165,6 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Camera Tab
             Tab("Camera", systemImage: "web.camera", value: 0) {
                 NavigationStack {
                     CameraPreview2(pipeline: cameraServer.pipeline)
@@ -239,6 +238,22 @@ struct ContentView: View {
                 }
             }
             .badge(cameraServer.rtsp?.connections.reduce(0, { $0 + $1.sessions.count }) ?? 0)
+
+            Tab("Security", systemImage: "lock", value: 2) {
+                NavigationStack {
+                    SecurityView(
+                        auth: .init(
+                            get: {
+                                cameraServer.rtsp?.auth
+                            },
+                            set: {
+                                cameraServer.rtsp?.auth = $0
+                            }
+                        )
+                    )
+                    .navigationTitle("Security Settings")
+                }
+            }
         }
         .task {
             UIApplication.shared.isIdleTimerDisabled = true

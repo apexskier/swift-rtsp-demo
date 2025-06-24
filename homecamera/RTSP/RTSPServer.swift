@@ -5,6 +5,11 @@ import Network
 
 @Observable
 class RTSPServer {
+    struct Auth: Equatable {
+        let username: String
+        let password: String
+    }
+    
     private var listener: CFSocket?
     private(set) var connections: [RTSPClientConnection] = []
     private(set) var configData: Data
@@ -12,6 +17,15 @@ class RTSPServer {
     // primary RTSP server port
     let port: UInt16 = 554
     private let selfQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier!).RTSPServer.self")
+    var auth: Auth? {
+        didSet {
+            selfQueue.sync {
+                for conn in connections {
+                    conn.shutdown()
+                }
+            }
+        }
+    }
 
     init?(configData: Data) {
         self.configData = configData
