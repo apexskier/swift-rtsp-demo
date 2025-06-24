@@ -6,7 +6,7 @@ import Foundation
 struct RTSPMessage {
     let command: String
     let commandParameters: [String]
-    private let sequence: Int
+    let sequence: Int
     let headers: [String: String]
     let body: String?
     let length: Int
@@ -20,6 +20,17 @@ struct RTSPMessage {
         guard let msg = String(data: data[data.startIndex..<range.lowerBound], encoding: .utf8)
         else {
             print("msg headers parse error: invalid UTF-8")
+            return nil
+        }
+        // parse msg as http response
+        if msg.starts(with: "RTSP/1.0") {
+            // response
+            let parts = msg.split(separator: " ", maxSplits: 2)
+            if let status = Int(parts[1]), status >= 300 {
+                print("msg parse error: invalid status code \(status)")
+            } else {
+                print("msg parse error: invalid response format")
+            }
             return nil
         }
         var msgLines = msg.components(separatedBy: "\r\n")

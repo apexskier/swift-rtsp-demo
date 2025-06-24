@@ -562,14 +562,28 @@ class RTSPClientConnection {
                 ptr += 4 + Int(length)
             } else {
                 // RTSP packet
-                let len = handleRTSPPacket(data, address: address)
+                guard let len = handleRTSPPacket(data, address: address) else {
+                    print("RTSP packet parsing failed")
+                    return
+                }
                 ptr += len
             }
         }
     }
 
-    private func handleRTSPPacket(_ data: Data, address: CFData) -> Int {
-        guard let msg = RTSPMessage(data) else { return 0 }
+    private var ipString: String? {
+        guard let localaddr = CFSocketCopyAddress(socketInbound) as? Data else {
+            return nil
+        }
+        return localaddr.withUnsafeBytes {
+            (ptr: UnsafeRawBufferPointer) -> String in
+            let sockaddr = ptr.baseAddress!.assumingMemoryBound(to: sockaddr_in.self)
+            return String(cString: inet_ntoa(sockaddr.pointee.sin_addr))
+        }
+    }
+
+    private func handleRTSPPacket(_ data: Data, address: CFData) -> Int? {
+        guard let msg = RTSPMessage(data) else { return nil }
         var response = [String]()
         let cmd = msg.command.lowercased()
         // print(
@@ -590,22 +604,17 @@ class RTSPClientConnection {
                 dateStyle: .long,
                 timeStyle: .long
             )
-            if let localaddr = CFSocketCopyAddress(socketInbound) as? Data {
-                let ipString = localaddr.withUnsafeBytes {
-                    (ptr: UnsafeRawBufferPointer) -> String in
-                    let sockaddr = ptr.baseAddress!.assumingMemoryBound(to: sockaddr_in.self)
-                    return String(cString: inet_ntoa(sockaddr.pointee.sin_addr))
-                }
+            if let ipString {
                 response.append("Content-base: rtsp://\(ipString)/")
             }
             let sdp = makeSDP()
-            response += [
-                "Date: \(date)",
-                "Content-Type: application/sdp",
-                "Content-Length: \((sdp.joined(separator: "\r\n") + "\r\n\r\n").lengthOfBytes(using: .utf8))",
-                "",
-            ]
-            response += sdp
+            response +=
+                [
+                    "Date: \(date)",
+                    "Content-Type: application/sdp",
+                    "Content-Length: \((sdp.joined(separator: "\r\n") + "\r\n\r\n").lengthOfBytes(using: .utf8))",
+                    "",
+                ] + sdp
         case "setup":
             if let firstParam = msg.commandParameters.first,
                 let url = URL(string: firstParam)
@@ -764,13 +773,8 @@ class RTSPClientConnection {
 
         let verid = UInt32.random(in: UInt32.min...UInt32.max)
 
-        guard let dlocaladdr = CFSocketCopyAddress(socketInbound) else {
+        guard let ipString else {
             fatalError("No peer address for socket")
-        }
-        let localaddr = dlocaladdr as Data
-        let ipString = localaddr.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) -> String in
-            let sockaddr = ptr.load(as: sockaddr_in.self)
-            return String(cString: inet_ntoa(sockaddr.sin_addr))
         }
         let packets = (server.bitrate / (maxPacketSize * 8)) + 1
         return [
