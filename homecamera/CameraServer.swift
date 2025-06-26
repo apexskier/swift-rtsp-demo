@@ -7,7 +7,7 @@
 //
 
 import AVFoundation
-import Combine
+@preconcurrency import Combine
 import Foundation
 
 #if canImport(UIKit)
@@ -17,7 +17,7 @@ import CoreImage
 #endif
 
 @Observable
-final class CameraServer: NSObject {
+final class CameraServer: NSObject, Sendable {
     // Singleton instance
     static let shared = CameraServer()
 
@@ -91,7 +91,7 @@ final class CameraServer: NSObject {
 
     // Use CIContext with metal for better performance
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-    
+
     private let audioSampleRate: Int = 44100
 
     private static func deviceFromDefaults(
@@ -385,25 +385,47 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         #if canImport(UIKit)
         UIGraphicsPushContext(context)
         // TODO: don't recreate, doing this because of concurrency warnings
-        let font = UIFont.systemFont(ofSize: 36)
-        let fontAttributes = [
-            NSAttributedString.Key.font: font,
-            NSAttributedString.Key.foregroundColor: UIColor.white,
-            NSAttributedString.Key.backgroundColor: UIColor.black,
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 36, weight: .bold),
+            .foregroundColor: UIColor.white,
+            .strokeColor: UIColor.black,
+            .kern: -1,
         ]
         let d = Date(
             timeInterval: sampleBuffer.presentationTimeStamp.seconds,
             since: .init(timeIntervalSinceNow: -CACurrentMediaTime())
         )
-        let string = NSAttributedString(
-            string: d.formatted(date: .abbreviated, time: .standard),
-            attributes: fontAttributes
+        // iOS 16 prevented getting the user-set name of the device, this only returns "iPhone"
+        let deviceName = NSAttributedString(
+            string: UIDevice.current.name,
+            attributes: textAttributes
         )
         context.saveGState()
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
 
-        string.draw(at: CGPoint(x: 20, y: 20))
+        func drawText(text: String, at point: CGPoint) {
+            let stringBorder = NSAttributedString(
+                string: text,
+                attributes: textAttributes.merging([.strokeWidth: -12.0]) { $1 }
+            )
+            stringBorder.draw(at: point)
+            let string = NSAttributedString(
+                string: text,
+                attributes: textAttributes
+            )
+            string.draw(at: point)
+        }
+
+        // Draw date/time in upper left
+        drawText(text: d.formatted(date: .abbreviated, time: .standard), at: CGPoint(x: 20, y: 20))
+
+        // Draw device name in lower right
+        let deviceNameSize = deviceName.size()
+        let deviceNameX = CGFloat(width) - deviceNameSize.width - 20
+        let deviceNameY = CGFloat(height) - deviceNameSize.height - 20
+        // x: deviceNameX for right margin, y: deviceNameY for lower right
+        drawText(text: deviceName.string, at: CGPoint(x: deviceNameX, y: deviceNameY))
 
         context.restoreGState()
         UIGraphicsPopContext()
