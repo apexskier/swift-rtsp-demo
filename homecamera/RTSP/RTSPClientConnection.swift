@@ -1,4 +1,5 @@
 import Combine
+import UIKit
 import CoreFoundation
 import Foundation
 import Network
@@ -841,7 +842,7 @@ class RTSPClientConnection {
         return [
             "v=0",
             "o=- \(verid) \(verid) IN IP4 \(ipString)",
-            "s=Live stream from iOS",
+            "s=Live stream from \(UIDevice.current.name)",
             "c=IN IP4 0.0.0.0",
             "t=0 0",
             "a=control:*",
