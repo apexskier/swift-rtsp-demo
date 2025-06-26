@@ -607,8 +607,8 @@ class RTSPClientConnection {
         sequenceNumber = msg.sequence + 1
         var response = [String]()
         let cmd = msg.command.lowercased()
-        // Basic Auth check for all commands except OPTIONS
-        if cmd != "options" && !isAuthorized(msg) {
+        // Basic Auth check for all commands except OPTIONS and TEARDOWN
+        if cmd != "options" && cmd != "teardown" && !isAuthorized(msg) {
             response = msg.createResponse(code: 401, text: "Unauthorized")
             response.append("WWW-Authenticate: Basic realm=\"\(Bundle.main.bundleIdentifier!)\"")
             if let responseData = (response.joined(separator: "\r\n") + "\r\n\r\n")
@@ -627,7 +627,7 @@ class RTSPClientConnection {
         switch cmd {
         case "options":
             response = msg.createResponse(code: 200, text: "OK")
-            response.append("Server: AVEncoderDemo/1.0")
+            response.append("Server: \(Bundle.main.bundleIdentifier!)/1.0")
             response.append("Public: DESCRIBE, SETUP, TEARDOWN, PLAY, OPTIONS")
             if server?.auth != nil {
                 response.append(
@@ -957,13 +957,23 @@ class RTSPClientConnection {
                             clock: videoClock
                         )
 
-                        packet[packet.startIndex + rtpHeaderSize] = (naluHeader & 0xe0) + 28  // FU_A type
-                        var fuHeader = naluHeader & 0x1f
+                        enum FragmentationUnitType: UInt8 {
+                            case A = 28
+                            case B = 29
+                        }
+
+                        // Fragmentation Unit
+                        // RFC 6184, 5.8
+                        let fnri = naluHeader & 0b11100000
+                        packet[packet.startIndex + rtpHeaderSize] = fnri | FragmentationUnitType.A.rawValue
+                        let ftype = naluHeader & 0b00011111
+                        var fuHeader = ftype
                         if bStart {
-                            fuHeader |= 0x80
+                            fuHeader |= 0b10000000
                             bStart = false
-                        } else if bEnd {
-                            fuHeader |= 0x40
+                        }
+                        if bEnd {
+                            fuHeader |= 0b01000000
                         }
                         packet[packet.startIndex + rtpHeaderSize + 1] = fuHeader
                         packet[

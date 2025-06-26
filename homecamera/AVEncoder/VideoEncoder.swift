@@ -98,7 +98,7 @@ final class VideoEncoder {
 
     // tracking if NALU is next frame
     private var prevNalIdc = 0
-    private var prevNalType = 0
+    private var prevNalType = NALUnit.NALType.unknown
     // array of NSData comprising a single frame. each data is one nalu with no start code
     private var pendingNALU: [Data]? = nil
 
@@ -479,8 +479,8 @@ final class VideoEncoder {
     // combine multiple NALUs into a single frame, and in the process, convert to BSF
     // by adding 00 00 01 startcodes before each NALU.
     private func onNALU(_ nalu: Data) {
-        let idc = Int(nalu[0] & 0x60)
-        let naltype = Int(nalu[0] & 0x1f)
+        let idc = Int(nalu[0] & 0b01100000)
+        let naltype = NALUnit.NALType(byte: nalu[0])
         if pendingNALU != nil {
             let nal = NALUnit(data: nalu)
             // we have existing data —is this the same frame?
@@ -489,14 +489,14 @@ final class VideoEncoder {
             var bNew = false
 
             // sei and param sets go with following nalu
-            if prevNalType < 6 {
-                if naltype >= 6 {
+            if prevNalType < .sei {
+                if naltype >= .sei {
                     bNew = true
                 } else if (idc != prevNalIdc) && ((idc == 0) || (prevNalIdc == 0)) {
                     bNew = true
-                } else if (naltype != prevNalType) && (naltype == 5) {
+                } else if (naltype != prevNalType) && (naltype == .idrSlice) {
                     bNew = true
-                } else if (naltype >= 1) && (naltype <= 5) {
+                } else if (naltype >= .slice) && (naltype <= .idrSlice) {
                     nal.skip(8)
                     if nal.getUE() == 0 {
                         bNew = true
@@ -505,7 +505,7 @@ final class VideoEncoder {
             }
             if bNew {
                 onEncodedFrame()
-                self.pendingNALU = nil
+                pendingNALU = nil
             }
         }
         prevNalType = naltype

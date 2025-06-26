@@ -383,3 +383,9 @@ final class POCState {
         return msb + lsb
     }
 }
+
+extension NALUnit.NALType: Comparable {
+    static func < (lhs: NALUnit.NALType, rhs: NALUnit.NALType) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
