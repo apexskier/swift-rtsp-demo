@@ -514,6 +514,9 @@ final class VideoEncoder {
             pendingNALU = []
             pendingNALU?.reserveCapacity(2)
         }
+        if naltype == .sei {
+            return
+        }
         pendingNALU?.append(nalu)
     }
 }
