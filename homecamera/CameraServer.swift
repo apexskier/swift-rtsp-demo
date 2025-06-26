@@ -419,11 +419,24 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         context.scaleBy(x: 1, y: -1)
 
         func drawText(text: String, at point: CGPoint) {
-            let stringBorder = NSAttributedString(
-                string: text,
-                attributes: textAttributes.merging([.strokeWidth: -12.0]) { $1 }
-            )
-            stringBorder.draw(at: point)
+            for offset in [
+                CGSize(width: 2, height: 2),
+                CGSize(width: -2, height: -2),
+                CGSize(width: 2, height: -2),
+                CGSize(width: -2, height: 2),
+            ] {
+                let shadow = NSShadow()
+                shadow.shadowColor = UIColor.black
+                shadow.shadowOffset = offset
+                shadow.shadowBlurRadius = 0
+                let stringBorder = NSAttributedString(
+                    string: text,
+                    attributes: textAttributes.merging([
+                        .shadow: shadow
+                    ]) { $1 }
+                )
+                stringBorder.draw(at: point)
+            }
             let string = NSAttributedString(
                 string: text,
                 attributes: textAttributes
