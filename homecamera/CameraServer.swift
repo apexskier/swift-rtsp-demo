@@ -91,7 +91,7 @@ final class CameraServer: NSObject {
 
     // Use CIContext with metal for better performance
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-
+    
     private let audioSampleRate: Int = 44100
 
     private static func deviceFromDefaults(
@@ -321,19 +321,11 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
         case 90:
             rotatedImage = ciImage.oriented(.right)
         case 180:
-            if videoDevice?.position == .front {
-                rotatedImage = ciImage.oriented(.up)
-            } else {
-                rotatedImage = ciImage.oriented(.down)
-            }
+            rotatedImage = ciImage.oriented(.down)
         case 270:
             rotatedImage = ciImage.oriented(.left)
         default:
-            if videoDevice?.position == .front {
-                rotatedImage = ciImage.oriented(.down)
-            } else {
-                rotatedImage = ciImage.oriented(.up)
-            }
+            rotatedImage = ciImage.oriented(.up)
         }
 
         let attributes: [String: Any] = [
