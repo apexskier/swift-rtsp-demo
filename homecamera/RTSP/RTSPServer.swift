@@ -4,6 +4,36 @@ import Foundation
 import Network
 import Security
 
+func getIPAddress() -> String? {
+    var address: String?
+    var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
+    if getifaddrs(&ifaddr) == 0 {
+        var ptr = ifaddr
+        while ptr != nil {
+            let interface = ptr!.pointee
+            let name = String(cString: interface.ifa_name)
+            if name == "en0", interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) {
+                var addr = interface.ifa_addr.pointee
+                var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                getnameinfo(
+                    &addr,
+                    socklen_t(interface.ifa_addr.pointee.sa_len),
+                    &hostname,
+                    socklen_t(hostname.count),
+                    nil,
+                    0,
+                    NI_NUMERICHOST
+                )
+                address = String(cString: hostname)
+                break
+            }
+            ptr = interface.ifa_next
+        }
+        freeifaddrs(ifaddr)
+    }
+    return address
+}
+
 @Observable
 class RTSPServer {
     struct Auth: Equatable {
@@ -149,34 +179,8 @@ class RTSPServer {
         }
     }
 
-    static func getIPAddress() -> String? {
-        var address: String?
-        var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
-        if getifaddrs(&ifaddr) == 0 {
-            var ptr = ifaddr
-            while ptr != nil {
-                let interface = ptr!.pointee
-                let name = String(cString: interface.ifa_name)
-                if name == "en0", interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) {
-                    var addr = interface.ifa_addr.pointee
-                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(
-                        &addr,
-                        socklen_t(interface.ifa_addr.pointee.sa_len),
-                        &hostname,
-                        socklen_t(hostname.count),
-                        nil,
-                        0,
-                        NI_NUMERICHOST
-                    )
-                    address = String(cString: hostname)
-                    break
-                }
-                ptr = interface.ifa_next
-            }
-            freeifaddrs(ifaddr)
-        }
-        return address
+    func getURL() -> String {
+        "rtsp://\(getIPAddress() ?? "0.0.0.0"):\(port)/"
     }
 }
 

@@ -73,6 +73,27 @@ struct BatterySaverToolbarItem: ToolbarContent {
     }
 }
 
+struct ServerUrlToolbarItem: ToolbarContent {
+    var urlString: String?
+
+    var body: some ToolbarContent {
+        ToolbarItem {
+            if let urlString, let url = URL(string: urlString) {
+                ShareLink(item: url) {
+                    Label("Copy URL", systemImage: "network")
+                }
+            } else {
+                Button {
+                    // noop
+                } label: {
+                    Label("Copy URL", systemImage: "network.slash")
+                }
+                .disabled(true)
+            }
+        }
+    }
+}
+
 struct CameraPickerToolbarItem: ToolbarContent {
     var cameraServer: CameraServer
 
@@ -163,6 +184,10 @@ struct ContentView: View {
     @State
     private var selectedTab: Int = 0
 
+    private var rtspUrl: String? {
+        cameraServer.rtsp?.getURL()
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Camera", systemImage: "web.camera", value: 0) {
@@ -170,21 +195,7 @@ struct ContentView: View {
                     CameraPreview2(pipeline: cameraServer.pipeline)
                         .ignoresSafeArea(.all, edges: [.horizontal])
                         .toolbar {
-                            ToolbarItem {
-                                if let urlString = cameraServer.getURL(),
-                                    let url = URL(string: urlString)
-                                {
-                                    ShareLink(item: url) {
-                                        Label("Copy URL", systemImage: "network")
-                                    }
-                                } else {
-                                    Button {
-                                    } label: {
-                                        Label("Copy URL", systemImage: "network.slash")
-                                    }
-                                    .disabled(true)
-                                }
-                            }
+                            ServerUrlToolbarItem(urlString: rtspUrl)
                             BatterySaverToolbarItem()
                             if cameraServer.videoDeviceDiscovery.devices.count > 1 {
                                 CameraPickerToolbarItem(cameraServer: cameraServer)
@@ -219,21 +230,7 @@ struct ContentView: View {
                     .padding()
                     .navigationTitle("Connections")
                     .toolbar {
-                        ToolbarItem {
-                            if let urlString = cameraServer.getURL(),
-                                let url = URL(string: urlString)
-                            {
-                                ShareLink(item: url) {
-                                    Label("Copy URL", systemImage: "network")
-                                }
-                            } else {
-                                Button {
-                                } label: {
-                                    Label("Copy URL", systemImage: "network.slash")
-                                }
-                                .disabled(true)
-                            }
-                        }
+                        ServerUrlToolbarItem(urlString: rtspUrl)
                     }
                 }
             }

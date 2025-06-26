@@ -287,11 +287,6 @@ final class CameraServer: NSObject, Sendable {
         self.videoOutput = nil
         self.captureQueue = nil
     }
-
-    func getURL() -> String? {
-        guard let rtsp else { return nil }
-        return "rtsp://\(RTSPServer.getIPAddress() ?? "0.0.0.0"):\(rtsp.port)/"
-    }
 }
 
 extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
