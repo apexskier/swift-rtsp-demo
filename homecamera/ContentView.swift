@@ -239,19 +239,40 @@ struct ContentView: View {
             }
             .badge(cameraServer.rtsp?.connections.reduce(0, { $0 + $1.sessions.count }) ?? 0)
 
-            Tab("Security", systemImage: "lock", value: 2) {
+            Tab("Settings", systemImage: "gear", value: 2) {
                 NavigationStack {
-                    SecurityView(
-                        auth: .init(
-                            get: {
-                                cameraServer.rtsp?.auth
-                            },
-                            set: {
-                                cameraServer.rtsp?.auth = $0
-                            }
+                    Form {
+                        StreamSettingsView(
+                            deviceName: .init(
+                                get: {
+                                    if cameraServer.hideDeviceName {
+                                        return nil
+                                    } else {
+                                        return cameraServer.deviceName
+                                    }
+                                },
+                                set: {
+                                    if let deviceName = $0 {
+                                        cameraServer.deviceName = deviceName
+                                        cameraServer.hideDeviceName = false
+                                    } else {
+                                        cameraServer.hideDeviceName = true
+                                    }
+                                }
+                            ),
+                            showDateTime: .init(
+                                get: { !cameraServer.hideDateTime },
+                                set: { cameraServer.hideDateTime = !$0 }
+                            )
                         )
-                    )
-                    .navigationTitle("Security Settings")
+                        SecurityView(
+                            auth: .init(
+                                get: { cameraServer.rtsp?.auth },
+                                set: { cameraServer.rtsp?.auth = $0 }
+                            )
+                        )
+                    }
+                    .navigationTitle("Settings")
                 }
             }
         }

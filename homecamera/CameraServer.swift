@@ -23,6 +23,25 @@ final class CameraServer: NSObject, Sendable {
 
     let pipeline = PassthroughSubject<CMSampleBuffer, Never>()
 
+    var hideDeviceName: Bool = UserDefaults.standard.bool(forKey: "hideDeviceName") {
+        didSet {
+            UserDefaults.standard.set(hideDeviceName, forKey: "hideDeviceName")
+        }
+    }
+    // iOS 16 prevented getting the user-set name of the device, this only returns "iPhone"
+    var deviceName: String =
+        UserDefaults.standard.string(forKey: "deviceName") ?? UIDevice.current.name
+    {
+        didSet {
+            UserDefaults.standard.set(deviceName, forKey: "deviceName")
+        }
+    }
+    var hideDateTime: Bool = UserDefaults.standard.bool(forKey: "hideDateTime") {
+        didSet {
+            UserDefaults.standard.set(hideDateTime, forKey: "hideDateTime")
+        }
+    }
+
     var session: AVCaptureSession? = nil
     let audioDeviceDiscovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [
@@ -395,11 +414,6 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             timeInterval: sampleBuffer.presentationTimeStamp.seconds,
             since: .init(timeIntervalSinceNow: -CACurrentMediaTime())
         )
-        // iOS 16 prevented getting the user-set name of the device, this only returns "iPhone"
-        let deviceName = NSAttributedString(
-            string: UIDevice.current.name,
-            attributes: textAttributes
-        )
         context.saveGState()
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
@@ -417,15 +431,26 @@ extension CameraServer: AVCaptureVideoDataOutputSampleBufferDelegate,
             string.draw(at: point)
         }
 
-        // Draw date/time in upper left
-        drawText(text: d.formatted(date: .abbreviated, time: .standard), at: CGPoint(x: 20, y: 20))
+        if !hideDateTime {
+            // Draw date/time in upper left
+            drawText(
+                text: d.formatted(date: .abbreviated, time: .standard),
+                at: CGPoint(x: 20, y: 20)
+            )
+        }
 
-        // Draw device name in lower right
-        let deviceNameSize = deviceName.size()
-        let deviceNameX = CGFloat(width) - deviceNameSize.width - 20
-        let deviceNameY = CGFloat(height) - deviceNameSize.height - 20
-        // x: deviceNameX for right margin, y: deviceNameY for lower right
-        drawText(text: deviceName.string, at: CGPoint(x: deviceNameX, y: deviceNameY))
+        if !hideDeviceName {
+            let deviceName = NSAttributedString(
+                string: deviceName,
+                attributes: textAttributes
+            )
+            // Draw device name in lower right
+            let deviceNameSize = deviceName.size()
+            let deviceNameX = CGFloat(width) - deviceNameSize.width - 20
+            let deviceNameY = CGFloat(height) - deviceNameSize.height - 20
+            // x: deviceNameX for right margin, y: deviceNameY for lower right
+            drawText(text: deviceName.string, at: CGPoint(x: deviceNameX, y: deviceNameY))
+        }
 
         context.restoreGState()
         UIGraphicsPopContext()
